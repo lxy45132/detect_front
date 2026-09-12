@@ -1,7 +1,11 @@
 node_modules
 dist
 dist-ssr
+coverage
 *.local
+
+# SDD 执行期草稿（ledger / brief / review package）
+.superpowers
 
 # 日志
 npm-debug.log*

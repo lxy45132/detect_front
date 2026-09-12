@@ -69,7 +69,7 @@ src/
 │  ├─ request.ts                  组装 http 实例，导出 get/post/put/del/getBlob
 │  ├─ auth.ts                     login
 │  ├─ dict.ts                     fetchEventEnums
-│  ├─ event.ts                    事件域 9 个端点
+│  ├─ event.ts                    事件域 7 个端点（`receive` 为 @Inner 内部接口，Python 推送专用，前端不封装）
 │  └─ __tests__/{interceptors,auth,event}.test.ts
 ├─ components/
 │  ├─ SnapImage.vue               抓拍图：null/空白/加载失败三态降级
@@ -293,7 +293,7 @@ git commit -m "feat: axios 请求层（拦截器纯函数化 + R 拆包 + 401 �
   - `getEventStatistics(params: { startTime?: string; endTime?: string; deviceNum?: string }): Promise<EventStat>`
   - `exportEvents(query: EventQuery, format: 'xlsx' | 'csv'): Promise<void>`
 
-> `GET /event-records/{eventId}/history` 本期**不封装** —— `EventRecordDetailVO` 已内嵌 `handleHistory: HandleHistoryItem[]`，详情抽屉直接用。该独立端点属设计规格 §7 第 3 项「处理记录」，做那个模块时再加。
+> 处理历史的独立端点 `GET /alert-handles/{eventId}/history`（接口文档 §4.3.5）本期**不封装** —— `EventRecordDetailVO` 已内嵌 `handleHistory: HandleHistoryItem[]`，详情抽屉直接用。该独立端点属设计规格 §7 第 3 项「处理记录」，做那个模块时再加。
 
 - [ ] **Step 1: 写失败测试**
 
@@ -307,7 +307,7 @@ mock 方式：`vi.mock('@/api/request', ...)` 打桩五个动词函数，断言 
 
 - **`login` 必须用 form 编码**：`POST /auth/oauth/token` 后端用 `@RequestParam` 接收，发 JSON 会 400。用 `new URLSearchParams({ username, password, grant_type: 'password', scope: 'server' })`，并显式设 `Content-Type: application/x-www-form-urlencoded`
 - `base-url.ts` 集中 `AUTH_BASE = '/auth'`、`EVENT_BASE = '/admin/event'`，各 api 文件从这里拼路径，网关前缀若调整只改一处
-- `exportEvents` 的流程：`getBlob` → `isJsonBlob(res.data)` 为真则 `readErrorFromBlob` 后抛 `BizError` → 否则 `downloadBlob(res.data, buildExportFilename('事件记录', format))`
+- `exportEvents` 的流程：`getBlob`（**`format` 并入 query 一起发**，接口文档 §4.1.8 要求 `format` 为 Query 参数，默认 `xlsx`）→ `isJsonBlob(res.data)` 为真则 `readErrorFromBlob` 后抛 `BizError`（含 `4001` 导出超 5 万条的情形，后端超限返 JSON 错误体而非文件流）→ 否则 `downloadBlob(res.data, buildExportFilename('事件记录', format))`
 - `deleteEvent` / `batchDeleteEvents` 的 HTTP method 与 body 形状要对照后端 controller 确认（DELETE 带 body，axios 需写 `{ data: { ids } }` 而非第二参）
 
 - [ ] **Step 3: 验收**
@@ -319,7 +319,7 @@ Expected: PASS，auth + event 全部用例绿。
 
 ```bash
 git add src/api
-git commit -m "feat: API 业务模块（auth/dict/event 共 9 个端点）+ 单测"
+git commit -m "feat: API 业务模块（event 7 + auth 1 + dict 1，共 9 个端点）+ 单测"
 ```
 
 ---
@@ -452,7 +452,7 @@ git commit -m "feat: 路由表、登录守卫与 BasicLayout 基础布局"
 9. 手改 URL 为 `/login?redirect=//evil.com` 登录后 → 落到 `/event/list`，**不外跳**
 10. 退出登录 → 回登录页，`localStorage` 的 `detect_access_token` 与 `detect_login_user` 均已清除，后退按钮回不到列表页
 
-> 若只启了 auth + event 没启网关：把 `VITE_PROXY_TARGET` 指向 8082，登录地址临时改直连 8081（生产不存在此问题）。
+> 若只启了 auth + event 没启网关：把 `VITE_PROXY_TARGET` 指向 8082，登录地址临时改直连 8081；**同时须把 `EVENT_BASE` 临时改为 `''`**（或给代理加一条 rewrite 去掉 `/admin/event`）—— 网关的 StripPrefix=2 是在网关上生效的，直连 8082 时路径里的 `/admin/event` 前缀没人剥，接口会全部 404（生产不存在此问题）。
 
 - [ ] **Step 3: 验收**
 
@@ -555,7 +555,7 @@ git commit -m "feat: SnapImage 抓拍图组件（无图/403 双态降级）+ 单
 - 筛选区 `el-form inline` 两行，右侧「查询 / 重置」：设备编号（input）、事件大类（select）、事件子类（select，选项由 `taskOptions` 联动）、处理状态（select）、优先级（select）、车牌号（input，模糊）、关键词（input，车牌 OR 设备名）、抓拍时间（`el-date-picker type="datetimerange"`，`value-format="YYYY-MM-DD HH:mm:ss"`）
 - **所有下拉 `clearable` 且 `placeholder="全部"`**（清空后值为 `''` 或 `null`，由 `cleanParams` 剔除，不会发出 `?eventType=` 让后端 Integer 绑定 400）
 - 工具栏：导出（`el-dropdown`：导出 Excel / 导出 CSV，**带当前筛选条件**）、批量删除（选中 0 条时禁用）
-- 表格 12 列（`el-table`，多选列 + 固定操作列，`stripe`，`v-loading="loading"`）：
+- 表格 13 列（`el-table`，多选列 + 固定操作列，`stripe`，`v-loading="loading"`）：
 
 | 列 | 字段 | 呈现 |
 |---|---|---|
