@@ -20,6 +20,21 @@ export const ERROR_MESSAGES: Record<number, string> = {
 export const TOKEN_KEY = 'detect_access_token'
 export const USER_KEY = 'detect_login_user'
 
+/**
+ * 前端本地错误哨兵码（均为负数，不与后端附录 A 的错误码重叠）。
+ *
+ * 三种本地失败的处置完全不同（静默 / 提示重试 / 提示缩小范围），
+ * 共用一个 `-1` 会让调用方的 `catch (e) { if (e.code === -1) }` 无法区分。
+ */
+export const LOCAL_ERROR_CODE = {
+  /** 请求被主动取消（切页 / 重复查询），静默处理 */
+  CANCELED: -1,
+  /** 网络中断 / 后端不可达 */
+  NETWORK: -2,
+  /** 导出返回 JSON 错误体：真实 code 已被 readErrorFromBlob 消化为文案 */
+  EXPORT_BLOB: -3
+} as const
+
 /** 事件大类 code */
 export const EVENT_TYPE = {
   FACE: 100,

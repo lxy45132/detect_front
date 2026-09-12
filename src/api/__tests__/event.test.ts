@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ElMessage } from 'element-plus'
+import type { AxiosResponse } from 'axios'
 import * as request from '@/api/request'
 import {
   batchDeleteEvents,
@@ -11,6 +12,7 @@ import {
   updateEvent
 } from '@/api/event'
 import { BizError } from '@/api/interceptors'
+import { LOCAL_ERROR_CODE } from '@/constants/error-code'
 
 vi.mock('element-plus', () => ({
   ElMessage: { error: vi.fn(), success: vi.fn(), warning: vi.fn(), info: vi.fn() }
@@ -23,11 +25,25 @@ vi.mock('@/api/request', () => ({
   getBlob: vi.fn()
 }))
 vi.mock('@/utils/download', () => ({
-  buildExportFilename: vi.fn(() => '事件记录_20260912_120000.xlsx'),
+  // 桩随 format 变化，才能守住「按 format 命名」这条链路（恒定返回值会让 csv 用例失去回归网）
+  buildExportFilename: vi.fn(
+    (prefix: string, format: string) => `${prefix}_20260912_120000.${format}`
+  ),
   downloadBlob: vi.fn(),
   isJsonBlob: vi.fn(() => false),
   readErrorFromBlob: vi.fn(async () => '导出数量超限')
 }))
+
+/** 最小 AxiosResponse<Blob> 工厂，替代散落的 `as never` 类型逃逸 */
+function blobResponse(blob: Blob): AxiosResponse<Blob> {
+  return {
+    data: blob,
+    status: 200,
+    statusText: 'OK',
+    headers: { 'content-type': 'application/vnd.ms-excel' },
+    config: { url: '/export' }
+  } as AxiosResponse<Blob>
+}
 
 beforeEach(() => vi.clearAllMocks())
 
@@ -65,12 +81,10 @@ describe('事件接口路径与参数', () => {
     })
   })
 
-  it('单条删除用 DELETE 且无 body', async () => {
+  it('单条删除用 DELETE 且不带请求体', async () => {
     vi.mocked(request.del).mockResolvedValue(null)
     await deleteEvent(8)
     expect(request.del).toHaveBeenCalledWith('/admin/event/event-records/8')
-    // 只传一个实参 = 未带请求体（区别于批量删除的 DELETE with body）
-    expect(vi.mocked(request.del).mock.calls[0]).toHaveLength(1)
   })
 
   it('批量删除用 DELETE 且 body 为 {ids}（§4.1.6）', async () => {
@@ -95,10 +109,10 @@ describe('事件接口路径与参数', () => {
 })
 
 describe('exportEvents', () => {
-  it('文件流正常时把 format 并入 query、按 format 命名并触发下载，不弹错误提示', async () => {
-    const { downloadBlob } = await import('@/utils/download')
+  it('xlsx：format 并入 query、按 format 命名后触发下载，且不弹任何提示', async () => {
+    const { buildExportFilename, downloadBlob } = await import('@/utils/download')
     const blob = new Blob(['xlsx-bytes'])
-    vi.mocked(request.getBlob).mockResolvedValue({ data: blob } as never)
+    vi.mocked(request.getBlob).mockResolvedValue(blobResponse(blob))
 
     await exportEvents({ eventType: 200 }, 'xlsx')
 
@@ -106,29 +120,53 @@ describe('exportEvents', () => {
       eventType: 200,
       format: 'xlsx'
     })
+    expect(buildExportFilename).toHaveBeenCalledWith('事件记录', 'xlsx')
     expect(downloadBlob).toHaveBeenCalledWith(blob, '事件记录_20260912_120000.xlsx')
     expect(ElMessage.error).not.toHaveBeenCalled()
+    expect(ElMessage.success).not.toHaveBeenCalled()
   })
 
-  it('csv 导出时 format=csv 并入 query', async () => {
-    vi.mocked(request.getBlob).mockResolvedValue({ data: new Blob(['csv']) } as never)
+  it('csv：命名走 .csv 后缀，不沿用 xlsx 名', async () => {
+    const { buildExportFilename, downloadBlob } = await import('@/utils/download')
+    const blob = new Blob(['csv-bytes'])
+    vi.mocked(request.getBlob).mockResolvedValue(blobResponse(blob))
 
     await exportEvents({}, 'csv')
 
     expect(request.getBlob).toHaveBeenCalledWith('/admin/event/event-records/export', {
       format: 'csv'
     })
+    expect(buildExportFilename).toHaveBeenCalledWith('事件记录', 'csv')
+    expect(downloadBlob).toHaveBeenCalledWith(blob, '事件记录_20260912_120000.csv')
   })
 
-  it('导出超限（HTTP 200 + JSON 错误体）时读回 msg、提示并抛 BizError，不落盘', async () => {
-    const { downloadBlob, isJsonBlob, readErrorFromBlob } = await import('@/utils/download')
-    vi.mocked(isJsonBlob).mockReturnValue(true)
-    vi.mocked(request.getBlob).mockResolvedValue({ data: new Blob(['{}']) } as never)
+  it('剔除分页参数：导出按筛选条件全量导出，不受当前页影响（§4.1.8）', async () => {
+    vi.mocked(request.getBlob).mockResolvedValue(blobResponse(new Blob(['x'])))
 
-    await expect(exportEvents({}, 'csv')).rejects.toBeInstanceOf(BizError)
-    await expect(exportEvents({}, 'csv')).rejects.toThrow('导出数量超限')
-    expect(readErrorFromBlob).toHaveBeenCalled()
+    await exportEvents({ current: 3, size: 50, eventType: 200 }, 'xlsx')
+
+    expect(request.getBlob).toHaveBeenCalledWith('/admin/event/event-records/export', {
+      eventType: 200,
+      format: 'xlsx'
+    })
+  })
+
+  it('导出超限（HTTP 200 + JSON 错误体）时只提示一次、抛 BizError 且不落盘', async () => {
+    const { downloadBlob, isJsonBlob, readErrorFromBlob } = await import('@/utils/download')
+    // 用一次性桩：clearAllMocks 不重置 mockReturnValue，永久桩会泄漏到后续用例
+    vi.mocked(isJsonBlob).mockReturnValueOnce(true)
+    vi.mocked(request.getBlob).mockResolvedValue(blobResponse(new Blob(['{}'])))
+
+    const pending = exportEvents({}, 'csv')
+    await expect(pending).rejects.toBeInstanceOf(BizError)
+    await expect(pending).rejects.toMatchObject({
+      code: LOCAL_ERROR_CODE.EXPORT_BLOB,
+      msg: '导出数量超限'
+    })
+    expect(readErrorFromBlob).toHaveBeenCalledTimes(1)
+    expect(ElMessage.error).toHaveBeenCalledTimes(1)
     expect(ElMessage.error).toHaveBeenCalledWith('导出数量超限')
+    expect(ElMessage.success).not.toHaveBeenCalled()
     expect(downloadBlob).not.toHaveBeenCalled()
   })
 })

@@ -1,4 +1,5 @@
 import axios, { type AxiosInstance, type AxiosResponse } from 'axios'
+import { API_BASE } from '@/api/base-url'
 import { onRequestFulfilled, onResponseFulfilled, onResponseRejected } from '@/api/interceptors'
 
 /**
@@ -9,7 +10,7 @@ import { onRequestFulfilled, onResponseFulfilled, onResponseRejected } from '@/a
  * 以此规避 request ↔ router 的循环依赖。
  */
 export const http: AxiosInstance = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE || '/api',
+  baseURL: API_BASE,
   timeout: 30000,
   headers: { 'Content-Type': 'application/json;charset=UTF-8' }
 })

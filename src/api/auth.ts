@@ -10,8 +10,10 @@ import type { TokenErrorResponse, TokenResponse } from '@/types/api'
  * 400 "Required request parameter 'username' is not present"。
  * `grant_type` 与 `scope` 在后端均为 `required = false`（scope 会原样回显），按接口约定一并带上。
  *
- * 刻意使用裸 axios 而非业务实例：该端点响应是 OAuth2 扁平结构而非 `R<T>` 包装，
- * 走业务拦截器会因「body.code 不是数字」而行为不明。
+ * 刻意使用裸 axios 而非业务实例：失败路径不同。登录失败是 HTTP 400 +
+ * `{error:"invalid_grant", error_description:"用户名或密码错误"}`，走业务拦截器会先弹
+ * `ERROR_MESSAGES[400]='参数错误'` 并把 `error_description` 吞掉，用户就看不到真实原因；
+ * 且该端点成功响应是 OAuth2 扁平结构而非 `R<T>` 包装，不适用拆包语义。
  */
 export async function login(username: string, password: string): Promise<TokenResponse> {
   const body = new URLSearchParams({

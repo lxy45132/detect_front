@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { AxiosResponse, InternalAxiosRequestConfig } from 'axios'
+import { AxiosHeaders, type AxiosResponse, type InternalAxiosRequestConfig } from 'axios'
 import { ElMessage } from 'element-plus'
 import {
   BizError,
@@ -7,6 +7,7 @@ import {
   onResponseFulfilled,
   onResponseRejected
 } from '@/api/interceptors'
+import { LOCAL_ERROR_CODE } from '@/constants/error-code'
 import { redirectToLogin } from '@/utils/navigate'
 
 /**
@@ -25,8 +26,9 @@ vi.mock('@/utils/token', () => ({
   clearStoredUser: vi.fn()
 }))
 
+/** 用真实 AxiosHeaders 而非 `{ set: vi.fn() } as never`：可直接断言头部的最终值 */
 function config(over: Partial<InternalAxiosRequestConfig> = {}): InternalAxiosRequestConfig {
-  return { url: '/x', method: 'get', params: {}, headers: { set: vi.fn() } as never, ...over }
+  return { url: '/x', method: 'get', params: {}, headers: new AxiosHeaders(), ...over }
 }
 
 function response(data: unknown, over: Partial<AxiosResponse> = {}): AxiosResponse {
@@ -35,9 +37,9 @@ function response(data: unknown, over: Partial<AxiosResponse> = {}): AxiosRespon
     status: 200,
     statusText: 'OK',
     headers: {},
-    config: { url: '/x', headers: {} } as InternalAxiosRequestConfig,
+    config: { url: '/x', headers: new AxiosHeaders() },
     ...over
-  } as AxiosResponse
+  }
 }
 
 beforeEach(() => {
@@ -48,13 +50,13 @@ beforeEach(() => {
 describe('onRequestFulfilled', () => {
   it('有令牌时注入 Authorization: Bearer', () => {
     const out = onRequestFulfilled(config())
-    expect(out.headers.set).toHaveBeenCalledWith('Authorization', 'Bearer jwt-abc')
+    expect(out.headers.get('Authorization')).toBe('Bearer jwt-abc')
   })
 
   it('无令牌时不加 Authorization 头（登录接口本身不带令牌）', () => {
     h.token = ''
     const out = onRequestFulfilled(config())
-    expect(out.headers.set).not.toHaveBeenCalled()
+    expect(out.headers.has('Authorization')).toBe(false)
   })
 
   it('清洗 GET 参数中的空值，但保留 priority=0', () => {
@@ -72,9 +74,9 @@ describe('onRequestFulfilled', () => {
 
 describe('onResponseFulfilled', () => {
   it('code=0 时拆包直返 data 而非整个 R', () => {
-    expect(
-      onResponseFulfilled(response({ code: 0, msg: 'success', data: { total: 4 } }))
-    ).toEqual({ total: 4 })
+    expect(onResponseFulfilled(response({ code: 0, msg: 'success', data: { total: 4 } }))).toEqual({
+      total: 4
+    })
   })
 
   it('code=0 且 data 为 null 时返回 null（DELETE/PUT 无数据体）', () => {
@@ -89,8 +91,7 @@ describe('onResponseFulfilled', () => {
       caught = e
     }
     expect(caught).toBeInstanceOf(BizError)
-    expect((caught as BizError).code).toBe(1001)
-    expect((caught as BizError).msg).toBe('事件不存在')
+    expect(caught).toMatchObject({ code: 1001, msg: '事件不存在' })
     // 只调用一次拦截器，才能断言「只弹一次」（重复调用会让计数断言失去意义）
     expect(ElMessage.error).toHaveBeenCalledTimes(1)
     expect(ElMessage.error).toHaveBeenCalledWith('事件不存在')
@@ -114,11 +115,7 @@ describe('onResponseFulfilled', () => {
   it('blob 响应原样透传整个 response（调用方要看 headers 判断 JSON 错误体）', () => {
     const blob = new Blob(['x'])
     const res = response(blob, {
-      config: {
-        url: '/export',
-        responseType: 'blob',
-        headers: {}
-      } as InternalAxiosRequestConfig
+      config: { url: '/export', responseType: 'blob', headers: new AxiosHeaders() }
     })
     expect(onResponseFulfilled(res)).toBe(res)
   })
@@ -129,15 +126,17 @@ describe('onResponseFulfilled', () => {
 })
 
 describe('onResponseRejected', () => {
-  it('HTTP 401 调 redirectToLogin 且不弹提示（跳页前弹消息没意义）', async () => {
+  it('HTTP 401 只跳一次登录且不弹提示（跳页前弹消息没意义）', async () => {
     const err = {
       response: { status: 401, data: { code: 401, msg: '未认证', data: null } },
       message: 'Request failed with status code 401',
       isAxiosError: true
     }
-    await expect(onResponseRejected(err)).rejects.toBeInstanceOf(BizError)
-    await expect(onResponseRejected(err)).rejects.toMatchObject({ code: 401 })
-    expect(redirectToLogin).toHaveBeenCalled()
+    // 只调用一次被测函数，才能断言「只跳一次」—— 重复硬跳转正是本分支最该守住的行为
+    const pending = onResponseRejected(err)
+    await expect(pending).rejects.toBeInstanceOf(BizError)
+    await expect(pending).rejects.toMatchObject({ code: 401, msg: '未认证' })
+    expect(redirectToLogin).toHaveBeenCalledTimes(1)
     expect(ElMessage.error).not.toHaveBeenCalled()
   })
 
@@ -147,33 +146,49 @@ describe('onResponseRejected', () => {
       message: 'x',
       isAxiosError: true
     }
-    await expect(onResponseRejected(err)).rejects.toBeInstanceOf(BizError)
+    await expect(onResponseRejected(err)).rejects.toMatchObject({
+      code: 403,
+      msg: '内部接口禁止外部访问'
+    })
     expect(ElMessage.error).toHaveBeenCalledWith('内部接口禁止外部访问')
     expect(redirectToLogin).not.toHaveBeenCalled()
   })
 
   it('HTTP 500 且无响应体时按状态码查兜底文案', async () => {
     const err = { response: { status: 500, data: null }, message: 'boom', isAxiosError: true }
-    await expect(onResponseRejected(err)).rejects.toMatchObject({ code: 500 })
+    await expect(onResponseRejected(err)).rejects.toMatchObject({ code: 500, msg: '系统异常' })
     expect(ElMessage.error).toHaveBeenCalledWith('系统异常')
   })
 
-  it('无 response（网络中断/超时）弹网络兜底文案', async () => {
+  it('无 response（网络中断/超时）弹网络兜底文案并使用 NETWORK 哨兵码', async () => {
     const err = { message: 'Network Error', isAxiosError: true }
-    await expect(onResponseRejected(err)).rejects.toBeInstanceOf(BizError)
+    await expect(onResponseRejected(err)).rejects.toMatchObject({
+      code: LOCAL_ERROR_CODE.NETWORK,
+      msg: 'Network Error'
+    })
     expect(ElMessage.error).toHaveBeenCalledWith('网络异常，请检查后端服务是否已启动')
   })
 
-  it('请求被取消时静默不提示', async () => {
+  it('请求被取消时静默不提示，使用 CANCELED 哨兵码', async () => {
     const err = { message: 'canceled', code: 'ERR_CANCELED', isAxiosError: true }
-    await expect(onResponseRejected(err)).rejects.toBeTruthy()
+    await expect(onResponseRejected(err)).rejects.toMatchObject({
+      code: LOCAL_ERROR_CODE.CANCELED,
+      msg: 'canceled'
+    })
     expect(ElMessage.error).not.toHaveBeenCalled()
     expect(redirectToLogin).not.toHaveBeenCalled()
   })
 
   it('未知状态码回退到 请求失败(status) 文案', async () => {
-    const err = { response: { status: 502, data: null }, message: 'bad gateway', isAxiosError: true }
-    await expect(onResponseRejected(err)).rejects.toMatchObject({ code: 502, msg: '请求失败(502)' })
+    const err = {
+      response: { status: 502, data: null },
+      message: 'bad gateway',
+      isAxiosError: true
+    }
+    await expect(onResponseRejected(err)).rejects.toMatchObject({
+      code: 502,
+      msg: '请求失败(502)'
+    })
     expect(ElMessage.error).toHaveBeenCalledWith('请求失败(502)')
   })
 })

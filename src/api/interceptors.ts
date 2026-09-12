@@ -1,6 +1,6 @@
 import axios, { type AxiosResponse, type InternalAxiosRequestConfig } from 'axios'
 import { ElMessage } from 'element-plus'
-import { ERROR_MESSAGES, SUCCESS_CODE } from '@/constants/error-code'
+import { ERROR_MESSAGES, LOCAL_ERROR_CODE, SUCCESS_CODE } from '@/constants/error-code'
 import type { R } from '@/types/api'
 import { redirectToLogin } from '@/utils/navigate'
 import { cleanParams } from '@/utils/params'
@@ -19,9 +19,12 @@ export class BizError extends Error {
   }
 }
 
-/** 弹错误提示：优先后端 msg，其次错误码表，最后通用文案 */
-function notifyError(code: number, msg?: string): void {
-  ElMessage.error(msg || ERROR_MESSAGES[code] || `请求失败(${code})`)
+/**
+ * 错误文案归口：后端 msg → 错误码表 → 通用兜底。
+ * 弹窗与抛错共用同一函数，否则两处一旦漂移就会出现「弹的文案 ≠ 抛的 msg」。
+ */
+function resolveMessage(code: number, msg?: string): string {
+  return msg || ERROR_MESSAGES[code] || `请求失败(${code})`
 }
 
 /**
@@ -60,8 +63,9 @@ export function onResponseFulfilled(response: AxiosResponse): unknown {
   if (body.code === SUCCESS_CODE) {
     return body.data
   }
-  notifyError(body.code, body.msg)
-  throw new BizError(body.code, body.msg || ERROR_MESSAGES[body.code] || `请求失败(${body.code})`)
+  const text = resolveMessage(body.code, body.msg)
+  ElMessage.error(text)
+  throw new BizError(body.code, text)
 }
 
 /**
@@ -72,31 +76,28 @@ export function onResponseFulfilled(response: AxiosResponse): unknown {
  * 主动取消的请求（切页/重复查询）静默处理，不打扰用户。
  */
 export async function onResponseRejected(error: unknown): Promise<never> {
-  const err = error as {
-    isAxiosError?: boolean
-    code?: string
-    message?: string
-    response?: { status: number; data?: R<unknown> | null }
-  }
+  const err = error as { code?: string; message?: string }
 
   if (err?.code === 'ERR_CANCELED') {
-    throw new BizError(-1, 'canceled')
+    throw new BizError(LOCAL_ERROR_CODE.CANCELED, 'canceled')
   }
 
-  const status = axios.isAxiosError(error) ? error.response?.status : undefined
-  const body = err?.response?.data as R<unknown> | null | undefined
+  // status 与 body 走同一条守卫路径，避开「status 判了 isAxiosError、body 没判」的分叉
+  const axiosError = axios.isAxiosError(error) ? error : undefined
+  const status = axiosError?.response?.status
+  const body = axiosError?.response?.data as R<unknown> | null | undefined
 
   if (status === 401) {
     redirectToLogin()
-    throw new BizError(401, body?.msg || ERROR_MESSAGES[401])
+    throw new BizError(401, resolveMessage(401, body?.msg))
   }
 
   if (status) {
-    const msg = body?.msg || ERROR_MESSAGES[status] || `请求失败(${status})`
+    const msg = resolveMessage(status, body?.msg)
     ElMessage.error(msg)
     throw new BizError(status, msg)
   }
 
   ElMessage.error('网络异常，请检查后端服务是否已启动')
-  throw new BizError(-1, err?.message || '网络异常')
+  throw new BizError(LOCAL_ERROR_CODE.NETWORK, err?.message || '网络异常')
 }

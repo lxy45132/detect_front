@@ -49,8 +49,11 @@ describe('login', () => {
       }
     })
 
-    await expect(login('admin', 'wrong')).rejects.toThrow('用户名或密码错误')
-    await expect(login('admin', 'wrong')).rejects.not.toThrow('invalid_grant')
+    // 只调一次：重复调用会让「只发一次请求」这类计数断言无法建立
+    const pending = login('admin', 'wrong')
+    await expect(pending).rejects.toThrow('用户名或密码错误')
+    await expect(pending).rejects.not.toThrow('invalid_grant')
+    expect(axios.post).toHaveBeenCalledTimes(1)
   })
 
   it('400 但无 error_description 时按状态码兜底', async () => {

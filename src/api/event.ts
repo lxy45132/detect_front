@@ -2,6 +2,7 @@ import { ElMessage } from 'element-plus'
 import { EVENT_BASE } from '@/api/base-url'
 import { BizError } from '@/api/interceptors'
 import { del, get, getBlob, put } from '@/api/request'
+import { LOCAL_ERROR_CODE } from '@/constants/error-code'
 import type {
   DeletedResult,
   EventQuery,
@@ -14,12 +15,6 @@ import type {
 import { buildExportFilename, downloadBlob, isJsonBlob, readErrorFromBlob } from '@/utils/download'
 
 const BASE = `${EVENT_BASE}/event-records`
-
-/**
- * blob 分支拿不到结构化 code（`readErrorFromBlob` 按契约只回可展示文案），
- * 而导出失败对调用方只有「提示 + 中止」一种处理，不需要按 code 分支。
- */
-const EXPORT_ERROR_CODE = -1
 
 /** 统计接口的可选筛选（§4.1.7 只认这三项） */
 export interface StatQuery {
@@ -64,20 +59,24 @@ export function getEventStatistics(query: StatQuery): Promise<EventStat> {
 /**
  * 导出（§4.1.8）：带当前筛选条件，不分页导出全部命中；`format` 为 Query 参数。
  *
+ * 分页参数在这里显式剔除：文档措辞是「同 4.1.2 的**筛选**参数（不分页）」，
+ * 当前后端 export 忽略 current/size，但若它将来复用分页 DTO，带着这两键会静默截断导出结果。
+ *
  * 两条分支：
  * 1. 正常 → 二进制流，前端自行按 format 命名后触发下载（不解析 Content-Disposition，
  *    规避后端 URLEncoder 把空格编成 `+` 的歧义）
  * 2. 超限 → HTTP 200 + `application/json` 的 `{code:4001}`，读回文本取 msg 提示后抛出
  */
 export async function exportEvents(query: EventQuery, format: 'xlsx' | 'csv'): Promise<void> {
-  const res = await getBlob(`${BASE}/export`, { ...query, format } as Record<string, unknown>)
+  const { current: _current, size: _size, ...filters } = query
+  const res = await getBlob(`${BASE}/export`, { ...filters, format } as Record<string, unknown>)
   const blob = res.data
 
   if (isJsonBlob(blob)) {
     const msg = await readErrorFromBlob(blob)
     // blob 走透传分支，拦截器不会提示，这里必须自己弹，否则用户看不到任何反馈
     ElMessage.error(msg)
-    throw new BizError(EXPORT_ERROR_CODE, msg)
+    throw new BizError(LOCAL_ERROR_CODE.EXPORT_BLOB, msg)
   }
 
   downloadBlob(blob, buildExportFilename('事件记录', format))
