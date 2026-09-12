@@ -32,5 +32,26 @@ Object.defineProperty(window, 'ResizeObserver', {
   value: ResizeObserverStub
 })
 
+/**
+ * jsdom 25 的 Blob 未实现 `text()` / `arrayBuffer()` / `stream()`（实测三者均为 undefined，
+ * 只有 `slice()`），而 `readErrorFromBlob` 要靠 `blob.text()` 读回导出超限时的 JSON 错误体。
+ * 用 jsdom 确实提供的 FileReader 补一个等价实现 —— 真实浏览器原生支持 `blob.text()`，
+ * 故业务代码不必为测试环境改写。
+ */
+if (typeof Blob.prototype.text !== 'function') {
+  Object.defineProperty(Blob.prototype, 'text', {
+    writable: true,
+    configurable: true,
+    value: function blobText(this: Blob): Promise<string> {
+      return new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(String(reader.result ?? ''))
+        reader.onerror = () => reject(reader.error)
+        reader.readAsText(this)
+      })
+    }
+  })
+}
+
 // Element Plus 的全局插件注册（config.global.plugins = [ElementPlus]）留到 Task 8 再加：
 // 本阶段只测纯函数，提前引入会拖慢全部测试。
