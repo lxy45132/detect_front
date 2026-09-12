@@ -25,6 +25,13 @@ const hasSrc = computed(() => typeof props.src === 'string' && props.src.trim() 
 /** 占位容器固定尺寸：缺图时也不塌陷，避免表格行高跳动 */
 const boxStyle = computed(() => ({ width: `${props.width}px`, height: `${props.height}px` }))
 const previewList = computed(() => (hasSrc.value ? [props.src as string] : []))
+/**
+ * 紧凑态（表格缩略图）：宽 60px 时内容区只有 58px，放不下图标 + 6 个字的「图片不可访问」
+ * （12px × 6 CJK ≈ 72px），硬切会让两个占位文案看不出区别 —— 而「有图但取不到」与
+ * 「本来就没图」必须可区分，否则运维会误判成「后端没存图」而查错方向。
+ * 故紧凑态下隐去图标、让文案换行完整显示（完整原因仍由 title 提示承载）。
+ */
+const compact = computed(() => props.width < 80)
 </script>
 
 <template>
@@ -41,10 +48,13 @@ const previewList = computed(() => (hasSrc.value ? [props.src as string] : []))
       <template #error>
         <div
           class="snap-image__fallback"
+          :class="{ 'snap-image__fallback--compact': compact }"
           title="MinIO 桶为私有，浏览器无法直接访问；执行 mc anonymous set download myminio/detect 可开启公读"
         >
-          <el-icon><Picture /></el-icon>
-          <span class="snap-image__text">图片不可访问</span>
+          <el-icon v-if="!compact"><Picture /></el-icon>
+          <span class="snap-image__text" :class="{ 'snap-image__text--compact': compact }">
+            图片不可访问
+          </span>
         </div>
       </template>
       <template #placeholder>
@@ -57,10 +67,13 @@ const previewList = computed(() => (hasSrc.value ? [props.src as string] : []))
     <div
       v-else
       class="snap-image__fallback"
+      :class="{ 'snap-image__fallback--compact': compact }"
       title="该事件未上传抓拍图（Python 端图片编码失败时 snapImage 可为 null）"
     >
-      <el-icon><Camera /></el-icon>
-      <span class="snap-image__text">无抓拍图</span>
+      <el-icon v-if="!compact"><Camera /></el-icon>
+      <span class="snap-image__text" :class="{ 'snap-image__text--compact': compact }">
+        无抓拍图
+      </span>
     </div>
   </div>
 </template>
@@ -92,12 +105,26 @@ const previewList = computed(() => (hasSrc.value ? [props.src as string] : []))
   font-size: 16px;
 }
 
-/* 窄容器下文案不换行、溢出隐藏，保证 60px 缩略图不被撑破 */
+/* 宽裕尺寸（详情抽屉大图）：图标 + 单行文案 */
 .snap-image__text {
   max-width: 100%;
   font-size: 12px;
   line-height: 1.2;
   white-space: nowrap;
   overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 紧凑态（表格缩略图）：无图标，文案换行完整显示，不被裁切成看不出区别 */
+.snap-image__fallback--compact {
+  gap: 0;
+  padding: 0 2px;
+}
+
+.snap-image__text--compact {
+  white-space: normal;
+  word-break: break-all;
+  text-align: center;
+  line-height: 1.15;
 }
 </style>

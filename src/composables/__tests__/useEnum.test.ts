@@ -79,11 +79,31 @@ describe('useEnum 推送状态', () => {
     expect(pushStatusLabel(1)).toBe('已推送')
   })
 
-  it('其他值与空值显示破折号', () => {
+  it('口径与其他 label 一致：空值→破折号，有值但不在值域→「未知」', () => {
     const { pushStatusLabel } = useEnum()
 
-    expect(pushStatusLabel(9)).toBe('—')
+    expect(pushStatusLabel(9)).toBe('未知')
     expect(pushStatusLabel(null)).toBe('—')
     expect(pushStatusLabel(undefined)).toBe('—')
+  })
+})
+
+describe('useEnum 走后端字典而非静态兜底', () => {
+  it('后端字典名称与 FALLBACK 不同时，label 取后端值（证明真的走 dict store）', async () => {
+    vi.mocked(fetchEventEnums).mockResolvedValue({
+      eventType: [{ code: 200, name: '车辆(后端)' }],
+      task: [],
+      handleStatus: [{ code: 2, name: '已结案(后端)' }],
+      priority: [{ code: 1, name: '重要(后端)' }],
+      ruleType: []
+    })
+    const dict = useDictStore()
+    dict.reset()
+    await dict.load(true)
+
+    const { priorityLabel, handleStatusLabel } = useEnum()
+    expect(priorityLabel(1)).toBe('重要(后端)')
+    expect(handleStatusLabel(2)).toBe('已结案(后端)')
+    expect(dict.labelOf('eventType', 200)).toBe('车辆(后端)')
   })
 })

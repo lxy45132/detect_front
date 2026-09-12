@@ -48,17 +48,30 @@ export const useDictStore = defineStore('dict', {
       const inflight = this.pending
       if (inflight && !force) return inflight
 
-      this.pending = (async () => {
+      /**
+       * orphan 守卫：`reset()`（退出登录）或 `load(true)` 之后，`this.pending` 已不是本 task，
+       * 此时在飞请求的 `finally` 不得再写回 state —— 否则会把已清空的字典「复活」，
+       * 尤其失败分支会留下 `loaded=true` + 静态兜底，导致整个会话不再重试真实字典。
+       * （Promise 在 Vue reactive 里属于不可代理类型，读回来是同一引用，故可直接比身份。）
+       */
+      // `let task!` + 事后赋值：async IIFE 的续体必然在 `this.pending = task` 之后才跑
+      // （首个 await 就交出控制权），故身份比较总是拿得到已赋值的 task
+      let task!: Promise<void>
+      task = (async () => {
         try {
-          this.enums = await fetchEventEnums()
+          const data = await fetchEventEnums()
+          if (this.pending === task) this.enums = data
         } catch {
-          this.enums = FALLBACK_ENUMS
+          if (this.pending === task) this.enums = FALLBACK_ENUMS
         } finally {
-          this.loaded = true
-          this.pending = null
+          if (this.pending === task) {
+            this.loaded = true
+            this.pending = null
+          }
         }
       })()
-      return this.pending
+      this.pending = task
+      return task
     },
 
     /**
@@ -73,16 +86,22 @@ export const useDictStore = defineStore('dict', {
         return fallback ?? DASH
       }
       const source = this.enums ?? FALLBACK_ENUMS
-      const items = source[kind] as (EnumItem | TaskItem)[]
+      // `?? []` 是运行时守卫：后端若少返一个键，`undefined.find` 会在渲染路径上打崩整页
+      const items = (source[kind] ?? []) as (EnumItem | TaskItem)[]
       const hit = items.find((item) => String(item.code) === String(code))
       return hit?.name ?? fallback ?? String(code)
     },
 
-    /** 事件子类按大类联动过滤；不传或传 null 返全量 */
-    tasksOfEventType(eventType?: number | null): TaskItem[] {
+    /**
+     * 事件子类按大类联动过滤；不传 / 传 null / 传空串返全量。
+     * 比较统一走 `String()`（Global Constraints）：`clearable` 清空给的是 `''`，
+     * 修正表单的值是 `string | number | null`，若用严格 `===` 比 number，
+     * 这类宽松值流进来会静默返回空数组（下拉变空、无报错、极难排查）。
+     */
+    tasksOfEventType(eventType?: number | string | null): TaskItem[] {
       const source = this.enums ?? FALLBACK_ENUMS
-      if (eventType === undefined || eventType === null) return source.task
-      return source.task.filter((item) => item.eventType === eventType)
+      if (eventType === undefined || eventType === null || eventType === '') return source.task
+      return source.task.filter((item) => String(item.eventType) === String(eventType))
     },
 
     /**

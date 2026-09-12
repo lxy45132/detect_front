@@ -57,11 +57,13 @@ export function useEnum() {
     /**
      * 预警推送状态（`event_records.status`）**前端硬编码**：
      * `EventEnums` 只有 eventType/task/handleStatus/priority/ruleType 五项，没有推送状态，查不到字典。
+     * 口径与上面两个 label 一致：空值→破折号，有值但不在值域→「未知」。
      */
     pushStatusLabel: (code: number | null | undefined): string => {
+      if (code === null || code === undefined) return DASH
       if (code === 1) return '已推送'
       if (code === 0) return '未推送'
-      return DASH
+      return UNKNOWN
     }
   }
 }

@@ -82,9 +82,13 @@ const router = createRouter({
 
 /**
  * 登录守卫。三条规则顺序不可换：
- * 1. 公开页（/login）免鉴权直接放行；但已登录还去登录页则直接进首页，避免重复登录
+ * 1. 公开页免鉴权直接放行
  * 2. 未登录访问受保护页 → /login?redirect=<目标 fullPath>
- * 3. 已登录 → 字典未加载则先 await 加载再放行（加载失败 store 内部已回落静态字典，不阻塞）
+ * 3. 已登录访问登录页 → /event/list；其余已登录导航在字典未加载时先 await 加载再放行
+ *    （加载失败 store 内部已回落静态字典，不阻塞）
+ *
+ * 规则 3 的判据用 `to.name === 'Login'` 而非 `to.meta.public`：将来新增其他公开页
+ * （注册页 / 找回密码 / 对外分享页）时，不应把已登录用户从那些页面踢回首页。
  *
  * 刷新页面后 Pinia 是空的，故先幂等 restore（main.ts 也调一次，此处兜住极端时序）。
  */
@@ -93,7 +97,8 @@ router.beforeEach(async (to) => {
   if (!auth.token) auth.restore()
 
   if (to.meta.public) {
-    return auth.isLoggedIn ? { path: '/event/list' } : true
+    if (auth.isLoggedIn && to.name === 'Login') return { path: '/event/list' }
+    return true
   }
 
   if (!auth.isLoggedIn) {

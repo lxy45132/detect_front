@@ -2,7 +2,6 @@
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import * as ElementPlusIconsVue from '@element-plus/icons-vue'
-import { routes } from '@/router'
 import { useAuthStore } from '@/stores/auth'
 
 const route = useRoute()
@@ -11,13 +10,16 @@ const auth = useAuthStore()
 const collapse = ref(false)
 
 /**
- * 侧栏菜单：取 `/`（BasicLayout）的子路由，过滤掉 hidden 与无 title 项。
+ * 侧栏菜单：取当前匹配链里的布局记录（`/`）的子路由，过滤掉 hidden 与无 title 项。
  * 由路由表生成而非另写一份菜单配置 —— 后续模块去掉 `hidden` 即自动上线。
+ *
+ * 刻意不静态 import `@/router` 的 `routes`：`router/index.ts` 反过来动态 import 本组件，
+ * 两边静态互引就是循环依赖（一旦有人为了首屏把它改成静态 import 就立即爆）。
+ * `RouteRecordNormalized.children` 带的就是同一份路由表数据。
  */
 const menus = computed(() => {
-  const layoutRoute = routes.find((item) => item.path === '/')
-  // `'children' in` 收窄 RouteRecordRaw 联合类型，避免对 redirect 型记录取 children 报错
-  const children = layoutRoute && 'children' in layoutRoute ? (layoutRoute.children ?? []) : []
+  const layoutRecord = route.matched.find((item) => item.path === '/')
+  const children = layoutRecord?.children ?? []
   return children
     .filter((child) => child.meta?.title && !child.meta?.hidden)
     .map((child) => ({

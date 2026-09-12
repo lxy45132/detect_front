@@ -3,6 +3,7 @@ import { computed, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, type FormInstance, type FormRules, type InputInstance } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
+import { resolveRedirect } from '@/utils/redirect'
 
 interface LoginForm {
   username: string
@@ -37,22 +38,12 @@ const rules: FormRules<LoginForm> = {
 }
 
 /**
- * 登录成功后的回跳目标，**必须防开放重定向**：
- * 只接受以单个 `/` 开头的站内路径，否则回落 `/event/list`。
- * 不校验的话 `?redirect=https://evil.com` 或 `?redirect=//evil.com` 会变成钓鱼跳板。
- * 指向 `/login` 的也归为首页，否则登录成功后又跳回登录页。
+ * 登录成功后的回跳目标由 `utils/redirect.ts` 的纯函数解析（开放重定向防护已单测覆盖）。
  */
-function resolveRedirect(raw: unknown): string {
-  const target = Array.isArray(raw) ? raw[0] : raw
-  if (typeof target !== 'string' || target === '') return '/event/list'
-  if (!target.startsWith('/') || target.startsWith('//')) return '/event/list'
-  if (target.startsWith('/login')) return '/event/list'
-  return target
-}
-
 async function handleSubmit(): Promise<void> {
   if (!formRef.value || busy.value) return
-  // 同步置闸，早于第一个 await
+  // 同步置闸，早于第一个 await：`auth.loading` 要到 validate 之后才置真，
+  // 单靠它挡不住同一 tick 的连点（实测：4 次点击 = 4 条 /oauth/token 请求）
   submitting.value = true
   try {
     const valid = await formRef.value.validate().catch(() => false)
@@ -60,8 +51,17 @@ async function handleSubmit(): Promise<void> {
 
     await auth.login(form.username.trim(), form.password)
     ElMessage.success('登录成功')
-    // 用 replace 而非 push：不留历史记录，避免后退回到登录页
-    await router.replace(resolveRedirect(route.query.redirect))
+
+    // 导航单独 try：此时令牌已落盘，若目标页的异步 chunk 加载失败（典型场景：
+    // 刚发版，用户停在旧登录页），不能让异常落进登录失败的 catch 里弹「登录失败」——
+    // 用户其实已登录。改用整页跳转，让浏览器取新的 index.html 与新的 chunk 清单。
+    const target = resolveRedirect(route.query.redirect)
+    try {
+      // 用 replace 而非 push：不留历史记录，避免后退回到登录页
+      await router.replace(target)
+    } catch {
+      window.location.assign(target)
+    }
   } catch (error) {
     // 登录走裸 axios（不经业务拦截器），错误提示必须在这里弹，否则用户看不到任何反馈。
     // 文案已由 api/auth.ts 从后端 error_description 提取。

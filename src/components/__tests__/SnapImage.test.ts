@@ -25,12 +25,27 @@ describe('SnapImage 无图降级', () => {
     expect(wrapper.find('img').exists()).toBe(false)
   })
 
-  it('props 有默认值：宽高 60×40、preview 关闭', () => {
-    const wrapper = mount(SnapImage, { props: { src: null } })
+  it('props 有默认值：不传任何 props 时为 60×40 + 无图占位 + 不开预览', () => {
+    // 真正走一遍 withDefaults：上面几个用例都显式传了 props，盖不到默认值分支
+    const wrapper = mount(SnapImage)
     const style = wrapper.find('.snap-image').attributes('style') ?? ''
 
     expect(style).toContain('width: 60px')
     expect(style).toContain('height: 40px')
+    expect(wrapper.text()).toContain('无抓拍图')
+    expect(wrapper.findComponent({ name: 'ElImage' }).exists()).toBe(false)
+  })
+
+  it('紧凑态（宽 <80）隐去图标、文案换行完整显示，不被裁切成看不出区别', () => {
+    const compact = mount(SnapImage, { props: { src: null, width: 60, height: 40 } })
+    const roomy = mount(SnapImage, { props: { src: null, width: 320, height: 200 } })
+
+    expect(compact.find('.snap-image__fallback--compact').exists()).toBe(true)
+    expect(compact.find('.snap-image__text--compact').exists()).toBe(true)
+    expect(compact.find('.el-icon').exists()).toBe(false)
+    // 宽裕尺寸（详情抽屉大图）仍保留图标 + 单行文案
+    expect(roomy.find('.snap-image__fallback--compact').exists()).toBe(false)
+    expect(roomy.find('.el-icon').exists()).toBe(true)
   })
 })
 

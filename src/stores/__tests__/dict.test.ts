@@ -83,10 +83,75 @@ describe('dict store 加载与缓存', () => {
     expect(store.labelOf('eventType', 200)).toBe('车辆')
   })
 
-  it('加载结束后 pending 归位，下次 force 仍能发起新请求', async () => {
+  it('加载结束后 pending 归位（成功与失败两条路径都归位）', async () => {
     const store = useDictStore()
     await store.load()
     expect(store.pending).toBeNull()
+
+    store.reset()
+    vi.mocked(fetchEventEnums).mockRejectedValue(new Error('network'))
+    await store.load()
+    expect(store.pending).toBeNull()
+    expect(store.loaded).toBe(true)
+  })
+})
+
+describe('dict store 在飞请求与 reset 的竞态', () => {
+  it('reset 后在飞请求成功返回也不复活 state（跳账号不残留）', async () => {
+    let resolveFn!: (value: EventEnums) => void
+    vi.mocked(fetchEventEnums).mockReturnValue(
+      new Promise<EventEnums>((resolve) => {
+        resolveFn = resolve
+      })
+    )
+    const store = useDictStore()
+    const pending = store.load()
+
+    store.reset()
+    resolveFn(ENUMS)
+    await pending
+
+    expect(store.enums).toBeNull()
+    expect(store.loaded).toBe(false)
+    expect(store.pending).toBeNull()
+  })
+
+  it('reset 后在飞请求失败也不留下 loaded=true（否则整个会话不再重试真实字典）', async () => {
+    let rejectFn!: (reason: unknown) => void
+    vi.mocked(fetchEventEnums).mockReturnValue(
+      new Promise<EventEnums>((_resolve, reject) => {
+        rejectFn = reject
+      })
+    )
+    const store = useDictStore()
+    const pending = store.load()
+
+    store.reset()
+    rejectFn(new Error('network'))
+    await pending
+
+    expect(store.enums).toBeNull()
+    expect(store.loaded).toBe(false)
+  })
+
+  it('reset 后重新 load 能拿到新请求的结果', async () => {
+    let resolveFn!: (value: EventEnums) => void
+    vi.mocked(fetchEventEnums).mockReturnValue(
+      new Promise<EventEnums>((resolve) => {
+        resolveFn = resolve
+      })
+    )
+    const store = useDictStore()
+    const orphan = store.load()
+    store.reset()
+
+    vi.mocked(fetchEventEnums).mockResolvedValue(ENUMS)
+    const fresh = store.load()
+    resolveFn(ENUMS)
+    await Promise.all([orphan, fresh])
+
+    expect(store.loaded).toBe(true)
+    expect(store.enums).toEqual(ENUMS)
   })
 })
 
@@ -130,6 +195,30 @@ describe('dict store 查表', () => {
     expect(store.tasksOfEventType(300).map((t) => t.code)).toEqual(['people_gathering'])
     expect(store.tasksOfEventType(null)).toHaveLength(3)
     expect(store.tasksOfEventType()).toHaveLength(3)
+  })
+
+  it('tasksOfEventType 接受字符串 code 与空串（clearable 清空给的是 ""）', async () => {
+    const store = useDictStore()
+    await store.load()
+
+    expect(store.tasksOfEventType('200').map((t) => t.code)).toEqual([
+      'license_plate',
+      'vehicle_type'
+    ])
+    expect(store.tasksOfEventType('')).toHaveLength(3)
+  })
+
+  it('后端少返一个字典键时 labelOf 不崩（渲染路径上的运行时守卫）', async () => {
+    vi.mocked(fetchEventEnums).mockResolvedValue({
+      eventType: [],
+      task: []
+    } as unknown as EventEnums)
+    const store = useDictStore()
+    await store.load()
+
+    expect(() => store.labelOf('ruleType', 'PLATE_BLACKLIST')).not.toThrow()
+    expect(store.labelOf('ruleType', 'PLATE_BLACKLIST')).toBe('PLATE_BLACKLIST')
+    expect(store.tasksOfEventType(200)).toEqual([])
   })
 
   it('下拉选项 getter 在未加载时也能给出兜底数据', () => {
