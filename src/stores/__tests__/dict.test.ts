@@ -153,6 +153,24 @@ describe('dict store 在飞请求与 reset 的竞态', () => {
     expect(store.loaded).toBe(true)
     expect(store.enums).toEqual(ENUMS)
   })
+
+  it('fetchEventEnums 同步抛出时不卡死：回落静态字典、loaded 为真、pending 归位', async () => {
+    // axios 确有同步抛出通道；若异步体在 task 初始化前就踩 TDZ，
+    // pending 会永久停在 rejected promise 上，所有受保护导航失败到整页刷新为止
+    vi.mocked(fetchEventEnums).mockImplementation(() => {
+      throw new Error('sync boom')
+    })
+    const store = useDictStore()
+
+    await expect(store.load()).resolves.toBeUndefined()
+
+    expect(store.loaded).toBe(true)
+    expect(store.pending).toBeNull()
+    expect(store.enums).toEqual(FALLBACK_ENUMS)
+
+    // 后续导航仍能正常进入（load 不报错、不重发）
+    await expect(store.load()).resolves.toBeUndefined()
+  })
 })
 
 describe('dict store 查表', () => {

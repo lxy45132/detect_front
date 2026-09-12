@@ -38,6 +38,25 @@ describe('resolveRedirect 开放重定向防护', () => {
     expect(resolveRedirect('javascript:alert(1)')).toBe('/event/list')
   })
 
+  it('拒绝含 C0 控制符的路径（URL 解析器会删掉 tab/LF/CR，把站内路径变成外站）', () => {
+    // vue-router 会把 `?redirect=/%0A/evil.com` 解码成字面换行；
+    // `new URL('/\n/evil.com', base).href === 'http://evil.com/'`
+    expect(resolveRedirect('/\n/evil.com')).toBe('/event/list')
+    expect(resolveRedirect('/\t/evil.com')).toBe('/event/list')
+    expect(resolveRedirect('/\r\n/evil.com')).toBe('/event/list')
+    expect(resolveRedirect('/event\u0000list')).toBe('/event/list')
+    expect(resolveRedirect('/event\u007Flist')).toBe('/event/list')
+  })
+
+  it('拒绝给浏览器直接消费的 sink 形态（hardNavigate / a[href）', () => {
+    // 这一组是上一组防护的实际意义：它们不走 router.replace，没有 origin 前置保护
+    for (const evil of ['//evil.com', '/\\evil.com', '/\n/evil.com', 'https://evil.com']) {
+      const target = resolveRedirect(evil)
+      expect(target).toBe('/event/list')
+      expect(new URL(target, 'http://localhost:5173/login').origin).toBe('http://localhost:5173')
+    }
+  })
+
   it('编码形态不会被误放行', () => {
     // %2F 不会被解码成 authority，但仍以 / 开头且不含 //，落到站内路径；
     // 关键是它不会把用户送出站

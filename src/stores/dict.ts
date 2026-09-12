@@ -54,10 +54,16 @@ export const useDictStore = defineStore('dict', {
        * 尤其失败分支会留下 `loaded=true` + 静态兜底，导致整个会话不再重试真实字典。
        * （Promise 在 Vue reactive 里属于不可代理类型，读回来是同一引用，故可直接比身份。）
        */
-      // `let task!` + 事后赋值：async IIFE 的续体必然在 `this.pending = task` 之后才跑
-      // （首个 await 就交出控制权），故身份比较总是拿得到已赋值的 task
-      let task!: Promise<void>
-      task = (async () => {
+      // 先建 deferred 再启动异步体：`task` 在 IIFE 运行前已初始化，即使 `fetchEventEnums()`
+      // **同步抛出**（axios 确有同步抛出通道）也不会踩 TDZ，更不会让 `this.pending`
+      // 永久停在一个 rejected promise 上（那会让所有受保护导航失败到整页刷新为止）
+      let finish!: () => void
+      const task = new Promise<void>((resolve) => {
+        finish = resolve
+      })
+      this.pending = task
+
+      void (async () => {
         try {
           const data = await fetchEventEnums()
           if (this.pending === task) this.enums = data
@@ -68,9 +74,10 @@ export const useDictStore = defineStore('dict', {
             this.loaded = true
             this.pending = null
           }
+          finish()
         }
       })()
-      this.pending = task
+
       return task
     },
 
@@ -100,8 +107,10 @@ export const useDictStore = defineStore('dict', {
      */
     tasksOfEventType(eventType?: number | string | null): TaskItem[] {
       const source = this.enums ?? FALLBACK_ENUMS
-      if (eventType === undefined || eventType === null || eventType === '') return source.task
-      return source.task.filter((item) => String(item.eventType) === String(eventType))
+      // `?? []` 同 labelOf：后端少返 `task` 键时不得在渲染路径上抛 TypeError
+      const tasks = source.task ?? []
+      if (eventType === undefined || eventType === null || eventType === '') return tasks
+      return tasks.filter((item) => String(item.eventType) === String(eventType))
     },
 
     /**

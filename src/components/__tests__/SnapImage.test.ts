@@ -25,7 +25,7 @@ describe('SnapImage 无图降级', () => {
     expect(wrapper.find('img').exists()).toBe(false)
   })
 
-  it('props 有默认值：不传任何 props 时为 60×40 + 无图占位 + 不开预览', () => {
+  it('props 有默认值：不传任何 props 时为 60×40 + 无图占位', () => {
     // 真正走一遍 withDefaults：上面几个用例都显式传了 props，盖不到默认值分支
     const wrapper = mount(SnapImage)
     const style = wrapper.find('.snap-image').attributes('style') ?? ''
@@ -34,6 +34,13 @@ describe('SnapImage 无图降级', () => {
     expect(style).toContain('height: 40px')
     expect(wrapper.text()).toContain('无抓拍图')
     expect(wrapper.findComponent({ name: 'ElImage' }).exists()).toBe(false)
+  })
+
+  it('preview 默认为关：只传 src 时 preview-src-list 为空数组', async () => {
+    const wrapper = mount(SnapImage, { props: { src: SNAP } })
+    await nextTick()
+
+    expect(wrapper.findComponent({ name: 'ElImage' }).props('previewSrcList')).toEqual([])
   })
 
   it('紧凑态（宽 <80）隐去图标、文案换行完整显示，不被裁切成看不出区别', () => {

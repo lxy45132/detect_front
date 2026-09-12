@@ -3,6 +3,7 @@ import { computed, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, type FormInstance, type FormRules, type InputInstance } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
+import { hardNavigate } from '@/utils/navigate'
 import { resolveRedirect } from '@/utils/redirect'
 
 interface LoginForm {
@@ -60,7 +61,8 @@ async function handleSubmit(): Promise<void> {
       // 用 replace 而非 push：不留历史记录，避免后退回到登录页
       await router.replace(target)
     } catch {
-      window.location.assign(target)
+      // 走已单测覆盖的 hardNavigate 封装，不在此处直连 window.location
+      hardNavigate(target)
     }
   } catch (error) {
     // 登录走裸 axios（不经业务拦截器），错误提示必须在这里弹，否则用户看不到任何反馈。

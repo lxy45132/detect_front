@@ -15,7 +15,10 @@ declare module 'vue-router' {
 const BasicLayout = () => import('@/layouts/BasicLayout.vue')
 
 /**
- * 路由表（具名导出供 BasicLayout 生成侧栏菜单）。
+ * 路由表（具名导出供 `createRouter` 与单测使用）。
+ *
+ * **菜单不由这里导出驱动**：`BasicLayout` 从 `route.matched` 的布局记录取 children 生成菜单，
+ * 勿反向静态 import 本文件的 `routes`（本文件动态 import BasicLayout，两边静态互引就是循环依赖）。
  *
  * `meta.hidden = true` 的项先注册但不渲染进菜单 —— 对应设计规格 §7 的后续模块，
  * 实现完成后去掉 hidden 即上线，避免路由指向不存在的组件。
