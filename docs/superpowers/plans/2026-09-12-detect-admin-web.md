@@ -407,7 +407,7 @@ git commit -m "feat: Pinia auth/dict store 与 useEnum（字典一次性缓存 +
 - [ ] **Step 3: 验收**
 
 Run: `npm run dev` → 浏览器开 `http://localhost:5173/`
-Expected: 未登录自动跳 `/login?redirect=%2F`；登录页占位可见；`npm run build` 零类型错误；`npm run test` 无回归。
+Expected: 未登录自动跳 `/login?redirect=/event/list`（**实测纠正**：`/` 的 `redirect` 在守卫执行前已被解析为 `/event/list`，故守卫看到的是目标路径而非 `/`；且 Vue Router 不会把 query 里的 `/` 编成 `%2F`）；登录页占位可见；`npm run build` 零类型错误；`npm run test` 无回归。
 
 - [ ] **Step 4: 提交**
 
@@ -447,7 +447,7 @@ git commit -m "feat: 路由表、登录守卫与 BasicLayout 基础布局"
 4. 密码框回车 → 等价于点登录
 5. 连点登录按钮 → 只发一次请求
 6. 登录后刷新页面 → 仍是登录态（`restore()` 生效）
-7. 未登录直接访问 `/event/list` → 跳 `/login?redirect=%2Fevent%2Flist`，登录后回到列表页
+7. 未登录直接访问 `/event/list` → 跳 `/login?redirect=/event/list`（实测：query 里的 `/` 不被编码），登录后回到列表页
 8. 已登录访问 `/login` → 自动跳 `/event/list`
 9. 手改 URL 为 `/login?redirect=//evil.com` 登录后 → 落到 `/event/list`，**不外跳**
 10. 退出登录 → 回登录页，`localStorage` 的 `detect_access_token` 与 `detect_login_user` 均已清除，后退按钮回不到列表页

@@ -1,0 +1,90 @@
+/* 全局：reset + CSS 变量 + 通用工具类。组件专属样式不放这里 */
+
+:root {
+  /* 视觉基调：Element Plus 默认主题色，圆角 4px（计划 Global Constraints） */
+  --dp-primary: #409eff;
+  --dp-bg: #f5f7fa;
+  --dp-border: #e4e7ed;
+  --dp-text: #303133;
+  --dp-text-muted: #909399;
+  --dp-sidebar-bg: #1f2d3d;
+  --dp-radius: 4px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Helvetica Neue', Helvetica, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei',
+    Arial, sans-serif;
+  font-size: 14px;
+  color: var(--dp-text);
+  background-color: var(--dp-bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 页面骨架：筛选卡 + 内容卡上下堆叠，间距统一 16px */
+.page-container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.filter-card .el-card__body {
+  padding-bottom: 2px;
+}
+
+/* 表格上方工具栏：左标题右操作 */
+.table-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.table-toolbar__title {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.table-toolbar__actions {
+  display: flex;
+  gap: 8px;
+}
+
+.muted {
+  color: var(--dp-text-muted);
+}
+
+/* 表格两行单元格里的次要行（设备编号、事件子类） */
+.sub-text {
+  font-size: 12px;
+  color: var(--dp-text-muted);
+  line-height: 1.4;
+}
+
+/* source_data 等 JSON 元数据展示块 */
+.json-pre {
+  margin: 0;
+  padding: 12px;
+  max-height: 260px;
+  overflow: auto;
+  background: #f7f8fa;
+  border: 1px solid var(--dp-border);
+  border-radius: var(--dp-radius);
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
