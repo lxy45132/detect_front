@@ -88,3 +88,10 @@ body {
   white-space: pre-wrap;
   word-break: break-all;
 }
+
+/* 分页条：靠右，与表格拉开间距（列表页与看板页共用） */
+.pager {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
