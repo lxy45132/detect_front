@@ -53,5 +53,6 @@ if (typeof Blob.prototype.text !== 'function') {
   })
 }
 
-// Element Plus 的全局插件注册（config.global.plugins = [ElementPlus]）留到 Task 8 再加：
-// 本阶段只测纯函数，提前引入会拖慢全部测试。
+// Element Plus 与其图标**刻意不在这里全局注册** —— 那会让每个纯函数测试文件也付一次
+// 导入/安装成本（实测：setup 从 68ms 涨到 95.73s，全量测试 3.55s → 13.05s）。
+// 组件测试在文件顶部 `import '@/test/element-plus'` 按需注入即可。
