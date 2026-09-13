@@ -121,8 +121,14 @@ function onEdited(): void {
   void reload()
 }
 
+/**
+ * 重拉详情（供宿主在修正保存后调用）。
+ * 抽屉未打开时直接返回：否则从表格行点「修正」保存后，会对着一个用户看不见的抽屉
+ * 白发一次请求；若此时事件刚被他人删除返 1001，还会在「修正成功」旁边再冒一条警告。
+ */
 function reload(): void {
-  if (props.eventId !== null) void fetchDetail(props.eventId)
+  if (!props.modelValue || props.eventId === null) return
+  void fetchDetail(props.eventId)
 }
 
 watch(

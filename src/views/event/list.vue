@@ -42,10 +42,9 @@ const dialogVisible = ref(false)
 const activeId = ref<number | null>(null)
 const drawerRef = ref<InstanceType<typeof EventDetailDrawer> | null>(null)
 
-/** el-table row-click 回传的列信息（只取用得到的两个字段） */
+/** el-table row-click 回传的列信息（只取用得到的字段） */
 interface ClickedColumn {
   type?: string
-  label?: string
 }
 
 // 字典先于列表：下拉选项与 code→中文翻译都靠它。load() 内部已对失败回退静态字典，不阻塞页面
@@ -65,20 +64,20 @@ function openEdit(row: EventRecordItem): void {
 }
 
 /**
- * 整行点击开详情，但点勾选列与操作列时不开 —— 否则点「删除」会先把抽屉弹出来，
- * 确认气泡也被抽屉遮住。
+ * 整行点击开详情，但点勾选列时不开。
+ * 操作列的三个按钮已各自 `@click.stop` 从事件层阻断冒泡，
+ * 故不需要再按列的中文标题判断（依赖显示文案太脆，改文案或国际化就会静默失效）。
  */
 function onRowClick(row: EventRecordItem, column: ClickedColumn): void {
-  if (column?.type === 'selection' || column?.label === '操作') return
+  if (column?.type === 'selection') return
   openDetail(row)
 }
 
 /**
  * 修正成功（页面级弹窗）：刷新列表 + 重拉抽屉详情。
- * 抽屉可能正开着（从抽屉底部点「修正」），不 reload 会看到修改前的旧值。
+ * 「修正成功」提示由弹窗内部单点负责，这里**不得再弹一次**（否则两条相同绿提示叠在一起）。
  */
 function onSaved(): void {
-  ElMessage.success('修正成功')
   void load()
   drawerRef.value?.reload()
 }
@@ -266,7 +265,10 @@ async function onExport(format: 'xlsx' | 'csv'): Promise<void> {
 
         <el-table-column label="抓拍图" width="86" align="center">
           <template #default="{ row }">
-            <SnapImage :src="row.snapUrl" :width="60" :height="40" />
+            <!-- 计划要求缩略图可点击放大；用 @click.stop 阻断冒泡，避免同时触发 row-click 开抽屉 -->
+            <div @click.stop>
+              <SnapImage :src="row.snapUrl" :width="60" :height="40" preview />
+            </div>
           </template>
         </el-table-column>
 
@@ -328,8 +330,8 @@ async function onExport(format: 'xlsx' | 'csv'): Promise<void> {
 
         <el-table-column label="操作" width="176" fixed="right" align="center">
           <template #default="{ row }">
-            <el-button link type="primary" @click="openDetail(row)">详情</el-button>
-            <el-button link type="primary" @click="openEdit(row)">修正</el-button>
+            <el-button link type="primary" @click.stop="openDetail(row)">详情</el-button>
+            <el-button link type="primary" @click.stop="openEdit(row)">修正</el-button>
             <el-popconfirm
               :title="`确认删除事件 #${row.id}？`"
               width="220"
@@ -338,7 +340,7 @@ async function onExport(format: 'xlsx' | 'csv'): Promise<void> {
               @confirm="onDelete(row)"
             >
               <template #reference>
-                <el-button link type="danger">删除</el-button>
+                <el-button link type="danger" @click.stop>删除</el-button>
               </template>
             </el-popconfirm>
           </template>
