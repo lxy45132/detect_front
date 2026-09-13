@@ -5,6 +5,7 @@ import EventEditDialog from '@/components/EventEditDialog.vue'
 import SnapImage from '@/components/SnapImage.vue'
 import { getEventDetail } from '@/api/event'
 import { BizError } from '@/api/interceptors'
+import { BIZ_CODE } from '@/constants/error-code'
 import { useEnum } from '@/composables/useEnum'
 import { useDictStore } from '@/stores/dict'
 import type { EventRecordDetail } from '@/types/api'
@@ -97,7 +98,7 @@ async function fetchDetail(id: number): Promise<void> {
   } catch (error) {
     detail.value = null
     // 1001 = 事件不存在（可能已被他人删除）：提示并关闭，不留一个空白抽屉在那
-    if (error instanceof BizError && error.code === 1001) {
+    if (error instanceof BizError && error.code === BIZ_CODE.EVENT_NOT_FOUND) {
       ElMessage.warning('事件不存在或已被删除')
       close()
     }

@@ -10,6 +10,7 @@ import type {
   TooltipComponentOption
 } from 'echarts'
 import type { EventStat } from '@/types/api'
+import { EVENT_TYPE } from '@/constants/error-code'
 
 /**
  * 三张图的 option 类型：只声明本项目**按需注册**过的 series 与 component，
@@ -29,11 +30,11 @@ export type StatChartOption = ComposeOption<
 /** 超过这个天数就不显示数据点符号：点太密会糊成一片，反而看不出趋势 */
 const SHOW_SYMBOL_MAX_DAYS = 40
 
-/** 大类色板：车辆 / 聚集 / 人脸 固定配色，避免每次刷新颜色跳动 */
+/** 大类色板：车辆 / 聚集 / 人脸 固定配色，避免每次刷新颜色跳动（code 走常量，不写裸数字） */
 const EVENT_TYPE_COLOR: Record<number, string> = {
-  200: '#409eff',
-  300: '#e6a23c',
-  100: '#67c23a'
+  [EVENT_TYPE.VEHICLE]: '#409eff',
+  [EVENT_TYPE.CROWD]: '#e6a23c',
+  [EVENT_TYPE.FACE]: '#67c23a'
 }
 
 /**

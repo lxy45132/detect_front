@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getEventDetail, updateEvent } from '@/api/event'
 import { BizError } from '@/api/interceptors'
+import { BIZ_CODE } from '@/constants/error-code'
 import {
   asNumber,
   diffEditForm,
@@ -50,7 +51,7 @@ async function fetchDetail(id: number): Promise<void> {
   } catch (error) {
     detail.value = null
     form.value = emptyEditForm()
-    if (error instanceof BizError && error.code === 1001) {
+    if (error instanceof BizError && error.code === BIZ_CODE.EVENT_NOT_FOUND) {
       ElMessage.warning('事件不存在或已被删除')
       close()
     }
@@ -102,7 +103,7 @@ async function handleSave(): Promise<void> {
     emit('saved')
     close()
   } catch (error) {
-    if (error instanceof BizError && error.code === 1001) {
+    if (error instanceof BizError && error.code === BIZ_CODE.EVENT_NOT_FOUND) {
       ElMessage.warning('事件不存在或已被删除')
       close()
     }

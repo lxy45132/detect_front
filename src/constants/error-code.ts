@@ -21,6 +21,15 @@ export const TOKEN_KEY = 'detect_access_token'
 export const USER_KEY = 'detect_login_user'
 
 /**
+ * 需要前端做分支处理的业务错误码（其余码只需展示文案，不必具名）。
+ * 1001 在详情抽屉与修正弹窗里用于「事件已被他人删除 → 提示并关闭」。
+ */
+export const BIZ_CODE = {
+  /** 事件不存在 */
+  EVENT_NOT_FOUND: 1001
+} as const
+
+/**
  * 前端本地错误哨兵码（均为负数，不与后端附录 A 的错误码重叠）。
  *
  * 三种本地失败的处置完全不同（静默 / 提示重试 / 提示缩小范围），
