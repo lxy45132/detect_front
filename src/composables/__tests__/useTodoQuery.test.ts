@@ -241,6 +241,36 @@ describe('useTodoQuery 流转后刷新', () => {
     expect(q.selection.value.map((r) => r.id)).toEqual([1, 2])
   })
 
+  it('reloadCurrent 末页仅剩 1 行流转到终态后收敛到最后合法页并重拉（避免停在空页）', async () => {
+    // 第一次拉：page=5 回 0 行，total 已收缩到 80（84 -> 80，因为流转到终态的 4 行从待办消失）
+    // 第二次拉：page=4 回 20 行（最后一个合法页）
+    fetchTodo
+      .mockResolvedValueOnce(pageOf([], 80, 5, DEFAULT_PAGE_SIZE))
+      .mockResolvedValueOnce(
+        pageOf(Array.from({ length: 20 }, (_, i) => row(60 + i)), 80, 4, DEFAULT_PAGE_SIZE)
+      )
+    const q = useTodoQuery()
+    q.page.value = 5
+
+    await q.reloadCurrent()
+
+    expect(fetchTodo).toHaveBeenCalledTimes(2)
+    expect(q.page.value).toBe(4)
+    expect(fetchTodo.mock.calls[1][0]).toMatchObject({ current: 4 })
+    expect(q.rows.value).toHaveLength(20)
+  })
+
+  it('reloadCurrent 首页拉空时不重拉（page=1 已是下限，避免无限循环）', async () => {
+    fetchTodo.mockResolvedValueOnce(pageOf([], 0, 1, DEFAULT_PAGE_SIZE))
+    const q = useTodoQuery()
+    q.page.value = 1
+
+    await q.reloadCurrent()
+
+    expect(fetchTodo).toHaveBeenCalledTimes(1)
+    expect(q.page.value).toBe(1)
+  })
+
   it('reloadAfterBatch 清空勾选并回第 1 页（跨页流转后原页码无意义）', async () => {
     fetchTodo.mockResolvedValue(pageOf([row(1), row(2)], 40, 3))
     const q = useTodoQuery()

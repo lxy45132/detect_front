@@ -47,6 +47,15 @@ const remark = ref('')
 const submitting = ref(false)
 /** 批量成功后的结果视图数据；非 null 时弹窗切到结果视图 */
 const result = ref<BatchHandleResult | null>(null)
+/**
+ * 批量已完成但尚未通知宿主的标志。幂等闸：`notifyIfBatchDone()` 只在未通知过时发一次，
+ * 避免「X/ESC 关结果视图 + 关闭后 watch 分支」双路径重复 emit。
+ *
+ * 背景：EP dialog 默认 `showClose=true` 与 `closeOnPressEscape=true`，用户可经 X/ESC 关窗，
+ * 两条路径都仅发 `update:modelValue(false)`，不经 `closeResult()` —— 若不兵底，`processed`
+ * 永不发出，宿主列表不会刷新（后端已改 → 前端陈旧，再点流转就撞 3001）。
+ */
+const batchDone = ref(false)
 
 /** events.length > 1 即批量模式（不单设 mode prop，规格允许此简化） */
 const isBatch = computed(() => props.events.length > 1)
@@ -110,6 +119,14 @@ function resetState(): void {
   remark.value = ''
   result.value = null
   submitting.value = false
+  batchDone.value = false
+}
+
+/** 幂等通知宿主：仅在 batchDone 为真时 emit processed，并立即复位避免重发 */
+function notifyIfBatchDone(): void {
+  if (!batchDone.value) return
+  batchDone.value = false
+  emit('processed')
 }
 
 function close(): void {
@@ -133,6 +150,10 @@ async function submit(): Promise<void> {
       // 批量成功切结果视图，不立即 emit processed —— 用户看完明细点关闭时才通知宿主刷新，
       // 否则明细会随弹窗关闭一并消失，用户失去「哪些行被跳过、为什么」的信息
       result.value = res
+      batchDone.value = true
+      // in-flight 关窗兵底：请求在飞期间宿主已把 modelValue 置 false（路由跳转、外部控制等），
+      // 弹窗已不可见 → 结果视图无人能点「关闭」，此时立即补发 processed
+      if (!props.modelValue) notifyIfBatchDone()
     } else {
       await processEvent({
         eventId: props.events[0].id,
@@ -152,29 +173,41 @@ async function submit(): Promise<void> {
 
 /** 结果视图的关闭按钮：此时才通知宿主刷新（emit processed），随后关窗 */
 function closeResult(): void {
-  emit('processed')
+  notifyIfBatchDone()
   close()
 }
 
 /**
- * 打开时（含首次挂载 modelValue=true）重置状态，防「再打开闪现上次值」。
- * 关闭时也重置一次作为兜底 —— 若外部通过路由跳转等方式卸载组件，watch 未必执行。
+ * 弹窗开关监听：只监听 `modelValue` 的跳变（false→true 重置、true→false 兵底通知 + 清空），
+ * 不监听 `props.events` / `props.presetTarget` —— 宿主如果写 `:events="[row]"`（内联字面量）
+ * 或传会重算的 computed，父级任何一次重渲染都会让 events 换引用 → 误触发重置 →
+ * 弹窗还开着但用户已选目标态与已输入 remark 被清空（与 `EventEditDialog` 只监听标量同构）。
  */
 watch(
-  () => [props.modelValue, props.events, props.presetTarget] as const,
-  ([visible]) => {
-    if (visible) {
+  () => props.modelValue,
+  (visible, prev) => {
+    if (visible && !prev) {
       resetState()
-    } else {
-      // 关闭时也清空，避免下次打开时先看到旧值再被重置的一帧闪烁
+    } else if (!visible) {
+      // 关闭时兵底补发（X/ESC/取消 三路径），随后清空避免下次打开闪现旧值
+      notifyIfBatchDone()
       target.value = null
       remark.value = ''
       result.value = null
       submitting.value = false
+      batchDone.value = false
     }
   },
-  { immediate: true, deep: true }
+  { immediate: true }
 )
+
+/**
+ * events 变了但弹窗仍开着（宿主换了一批选中行）：只失效非法 target，不动 remark。
+ * 重置 target 而不重置备注 —— 备注很可能仍适用（同一批处理意图），而 target 可能已不合法。
+ */
+watch(allowed, (list) => {
+  if (target.value !== null && !list.includes(target.value)) target.value = null
+})
 </script>
 
 <template>
@@ -183,6 +216,8 @@ watch(
     :title="dialogTitle"
     width="560px"
     :close-on-click-modal="false"
+    :show-close="!submitting"
+    :close-on-press-escape="!submitting"
     @update:model-value="emit('update:modelValue', $event)"
   >
     <!-- 结果视图（批量成功后）：显示成功/跳过数与 skipped 明细 -->
@@ -246,7 +281,7 @@ watch(
       <!-- 结果视图只留关闭按钮；表单视图为取消 + 提交 -->
       <el-button v-if="result" type="primary" @click="closeResult">关闭</el-button>
       <template v-else>
-        <el-button @click="close">取消</el-button>
+        <el-button :disabled="submitting" @click="close">取消</el-button>
         <el-button
           type="primary"
           :loading="submitting"

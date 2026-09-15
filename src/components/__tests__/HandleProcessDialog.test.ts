@@ -293,14 +293,11 @@ describe('HandleProcessDialog 批量提交与结果视图', () => {
     expect(wrapper.emitted('processed')).toBeUndefined()
     // 弹窗未关
     expect(wrapper.emitted('update:modelValue')).toBeUndefined()
-    // 结果视图
-    const text = document.body.textContent ?? ''
-    expect(text).toContain('成功')
-    expect(text).toContain('2')
-    expect(text).toContain('跳过')
-    expect(text).toContain('1')
-    expect(text).toContain('#3')
-    expect(text).toContain('状态流转非法')
+    // 结果视图：断言完整文案（归一化空白），避免「成功 2 / 跳过 1」与「成功 1 / 跳过 2」同时命中裸数字断言
+    const flat = (document.body.textContent ?? '').replace(/\s+/g, '')
+    expect(flat).toContain('成功2条，跳过1条')
+    expect(flat).toContain('#3')
+    expect(flat).toContain('状态流转非法')
   })
 
   it('批量结果视图点「关闭」→ emit processed + 关闭弹窗', async () => {
@@ -336,14 +333,12 @@ describe('HandleProcessDialog 批量提交与结果视图', () => {
     await flushPromises()
     await clickButton('提交')
 
-    const text = document.body.textContent ?? ''
-    expect(text).toContain('成功')
-    expect(text).toContain('0')
-    expect(text).toContain('跳过')
-    expect(text).toContain('2')
-    expect(text).toContain('#1')
-    expect(text).toContain('#2')
-    expect(text).toContain('事件不存在')
+    // 完整文案断言（归一化空白）：锁定「成功 0 / 跳过 2」的写向，避免裸数字断言无法捕捉「写反」缺陷
+    const flat = (document.body.textContent ?? '').replace(/\s+/g, '')
+    expect(flat).toContain('成功0条，跳过2条')
+    expect(flat).toContain('#1')
+    expect(flat).toContain('#2')
+    expect(flat).toContain('事件不存在')
   })
 })
 
@@ -461,5 +456,80 @@ describe('HandleProcessDialog 状态重置', () => {
 
     expect(radioInputOf('处理中').checked).toBe(false)
     expect(radioInputOf('已处理').checked).toBe(false)
+  })
+})
+
+describe('HandleProcessDialog 关闭路径兵底（X/ESC/空 events）', () => {
+  it('批量结果视图点右上角 X 关闭 → 同样 emit processed（宿主必须刷新）', async () => {
+    batchProcess.mockResolvedValue({ processed: 1, skipped: [] } satisfies BatchHandleResult)
+    const wrapper = await openDialog({
+      events: [row(1, HANDLE_STATUS.PENDING), row(2, HANDLE_STATUS.PROCESSING)]
+    })
+
+    clickRadio('误报忽略')
+    await flushPromises()
+    await clickButton('提交')
+    expect(wrapper.emitted('processed')).toBeUndefined()
+
+    // 点右上角 X（EP dialog 的 header 关闭按钮）：内部 emit update:modelValue false，
+    // 宿主同步 props.modelValue=false 后 watch 分支必须兵底补发 processed
+    const headerBtn = document.body.querySelector<HTMLButtonElement>('.el-dialog__headerbtn')
+    expect(headerBtn).not.toBeNull()
+    headerBtn?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    await flushPromises()
+    await wrapper.setProps({ modelValue: false })
+    await flushPromises()
+
+    expect(wrapper.emitted('processed')).toHaveLength(1)
+  })
+
+  it('批量结果视图宿主外部关窗（路由跳转等）→ watch 分支同样兵底 emit processed', async () => {
+    batchProcess.mockResolvedValue({ processed: 2, skipped: [] } satisfies BatchHandleResult)
+    const wrapper = await openDialog({
+      events: [row(1, HANDLE_STATUS.PENDING), row(2, HANDLE_STATUS.PROCESSING)]
+    })
+
+    clickRadio('误报忽略')
+    await flushPromises()
+    await clickButton('提交')
+    expect(wrapper.emitted('processed')).toBeUndefined()
+
+    // 宿主不经弹窗内部按钮，直接外部关窗
+    await wrapper.setProps({ modelValue: false })
+    await flushPromises()
+
+    expect(wrapper.emitted('processed')).toHaveLength(1)
+  })
+
+  it('events 为空时三项目标态全禁用且提交按钮禁用', async () => {
+    await openDialog({ events: [] })
+
+    expect(isRadioDisabled('处理中')).toBe(true)
+    expect(isRadioDisabled('已处理')).toBe(true)
+    expect(isRadioDisabled('误报忽略')).toBe(true)
+    expect(buttonByText('提交').disabled).toBe(true)
+  })
+
+  it('提交中时右上角 X 隐藏（:show-close="!submitting"），避免 in-flight 关窗丢结果', async () => {
+    let resolveFn!: () => void
+    processEvent.mockReturnValue(
+      new Promise<void>((resolve) => {
+        resolveFn = resolve
+      })
+    )
+    await openDialog({ events: [row(8, HANDLE_STATUS.PENDING)] })
+
+    clickRadio('处理中')
+    await flushPromises()
+    // 弹窗打开时 X 可见
+    expect(document.body.querySelector('.el-dialog__headerbtn')).not.toBeNull()
+
+    buttonByText('提交').dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    await flushPromises()
+    // 提交中：headerbtn 隐藏（EP 对 show-close=false 直接不渲染按钮）
+    expect(document.body.querySelector('.el-dialog__headerbtn')).toBeNull()
+
+    resolveFn()
+    await flushPromises()
   })
 })

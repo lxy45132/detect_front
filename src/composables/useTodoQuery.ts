@@ -115,9 +115,17 @@ export function useTodoQuery() {
    * 保页码 —— 用户从第 N 页点的按钮，回查后仍应在第 N 页看剩余行（本页可能因流转少 1 行，
    * 也可能行数不变，例如「未处理 → 处理中」的行仍留在待办列表）。
    * 保勾选 —— 单条流转与勾选无关，误清会破坏用户后续的批量意图。
+   *
+   * **末页收敛**：若流转到终态（2/3）且本页只剩这 1 行，回查后 rows 为空、page 越界，
+   * 同一阶段 `removeOne` 的理由 —— 根据新 total 收敛到最后一个合法页后重拉，避免停在空页。
+   * 代价：末页删空的罕见场景多一次分页请求，换来不靠 EP 分页内部 clamp 自愈的确定性。
    */
   async function reloadCurrent(): Promise<void> {
     await load()
+    if (rows.value.length === 0 && page.value > 1) {
+      page.value = Math.max(1, Math.ceil(total.value / size.value))
+      await load()
+    }
   }
 
   /**
