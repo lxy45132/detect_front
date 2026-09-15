@@ -10,18 +10,18 @@ import type {
   EventRecordItem,
   EventRecordUpdate,
   EventStat,
-  PageResult
+  PageResult,
+  StatQuery
 } from '@/types/api'
 import { buildExportFilename, downloadBlob, isJsonBlob, readErrorFromBlob } from '@/utils/download'
 
-const BASE = `${EVENT_BASE}/event-records`
+/**
+ * 兼容 re-export：`StatQuery` 已在二阶段收归 `@/types/api`（跨事件/处理两域共用），
+ * 一阶段的 `import type { StatQuery } from '@/api/event'` 调用点无需改动。
+ */
+export type { StatQuery }
 
-/** 统计接口的可选筛选（§4.1.7 只认这三项） */
-export interface StatQuery {
-  startTime?: string
-  endTime?: string
-  deviceNum?: string
-}
+const BASE = `${EVENT_BASE}/event-records`
 
 /** 分页查询事件列表（§4.1.2）：后端固定 `snap_time DESC`，不接受排序参数 */
 export function pageEvents(query: EventQuery): Promise<PageResult<EventRecordItem>> {

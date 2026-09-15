@@ -29,6 +29,17 @@ export interface PageQuery {
   size?: number
 }
 
+/**
+ * 统计接口的可选筛选（§4.1.7 事件统计 / §4.3.6 处理效率统计均只认这三项）。
+ *
+ * 一阶段先落在 `api/event.ts`，二阶段收归此处（跨域共用）；`api/event.ts` 保留兼容 re-export。
+ */
+export interface StatQuery {
+  startTime?: string
+  endTime?: string
+  deviceNum?: string
+}
+
 /* ============================ 认证 detect-auth ============================ */
 
 /**
@@ -220,6 +231,47 @@ export interface DeletedResult {
 }
 
 /* ============================ 预警处理 §4.3（详情抽屉已用 history） ============================ */
+
+/** 待办列表查询（TodoQueryDTO §4.3.1）：无 handleStatus 筛选（后端固定 {0,1}） */
+export interface TodoQuery extends PageQuery {
+  /** 优先级 0/1/2 */
+  priority?: number | null
+  /** 事件大类 100/200/300 */
+  eventType?: number | null
+  /** 设备编号（精确） */
+  deviceNum?: string | null
+  /** 抓拍时间起（yyyy-MM-dd HH:mm:ss） */
+  startTime?: string | null
+  /** 抓拍时间止 */
+  endTime?: string | null
+}
+
+/** 处理记录查询（HandleRecordQueryDTO §4.3.4）：不做 handlerId 筛选（规格 §3.3） */
+export interface HandleRecordQuery extends PageQuery {
+  eventId?: number | null
+  /** 处理时间起 */
+  startTime?: string | null
+  /** 处理时间止 */
+  endTime?: string | null
+}
+
+/**
+ * 单条流转请求体（HandleProcessDTO §4.3.2）。
+ * remark 上限 500 字（对齐 `alert_handle_record.handle_remark` 列宽）；
+ * 空串场景由调用方剔除键，不发 `remark: null`（后端 setIgnoreNullValue 会静默忽略，语义混乱）。
+ */
+export interface HandleProcessRequest {
+  eventId: number
+  toStatus: number
+  remark?: string
+}
+
+/** 批量流转请求体（BatchHandleDTO §4.3.3）：非法项由后端跳过，前端仅预检提示不拦截 */
+export interface BatchHandleRequest {
+  eventIds: number[]
+  toStatus: number
+  remark?: string
+}
 
 /** 待办列表项（TodoVO）= 事件列表项 + 命中规则名 */
 export interface TodoItem extends EventRecordItem {
