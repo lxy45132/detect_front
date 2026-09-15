@@ -1,8 +1,8 @@
 # Detect 事件管理后台前端
 
-Vue 3 + TypeScript 单页后台，对接 `detect-gateway`（Spring Cloud）。本期交付**三个可用页面**：登录、事件管理（列表 / 详情 / 修正 / 删除 / 导出）、数据看板（统计卡 + 三张 ECharts 图）。
+Vue 3 + TypeScript 单页后台，对接 `detect-gateway`（Spring Cloud）。一阶段交付**三个可用页面**（登录、事件管理、数据看板），二阶段 A 组再交付**预警处置闭环**（预警待办 + 状态流转弹窗 + 处理记录 + 看板处理效率 5 卡），共**五个可用页面**。
 
-数据来源是 Python 视频分析端（yolo26）经 webhook 推送到 Java 端的 `event_records`；前端**不新增事件**，只做查询、字段修正、逻辑删除与导出。
+数据来源是 Python 视频分析端（yolo26）经 webhook 推送到 Java 端的 `event_records`；前端**不新增事件**，只做查询、字段修正、逻辑删除、导出与状态流转（留痕）。
 
 ---
 
@@ -38,7 +38,7 @@ npm run dev
 常用命令（PowerShell 下多条命令用 `;` 分隔，**不要用 `&&`**）：
 
 ```powershell
-npm run test            # vitest run —— 19 files / 202 tests
+npm run test            # vitest run —— 24 files / 302 tests
 npm run test:watch      # 监听模式
 npm run test:coverage   # 覆盖率（v8）
 npm run type-check      # vue-tsc --noEmit 全量类型检查
@@ -83,24 +83,29 @@ src/
 │  ├─ auth.ts            login（裸 axios，form 编码）
 │  ├─ dict.ts            fetchEventEnums
 │  ├─ event.ts           事件域 7 个端点（receive 是 @Inner 内部接口，前端不封装）
+│  ├─ handle.ts          预警处理域 5 个端点（todo/process/batch-process/records/statistics）
 │  └─ __tests__/
 ├─ components/
 │  ├─ SnapImage.vue           抓拍图：无图 / 403 双态降级
 │  ├─ StatChart.vue           ECharts 容器：按需注册、setOption、resize、dispose
 │  ├─ EventDetailDrawer.vue   详情抽屉（含处理历史时间线）
 │  ├─ EventEditDialog.vue     修正弹窗（按大类分组动态字段）
+│  ├─ HandleProcessDialog.vue 状态流转弹窗（单条/批量通用，矩阵驱动禁用 + 预检计数 + 结果视图）
 │  └─ __tests__/
 ├─ composables/
 │  ├─ useEnum.ts          code → 中文名 / el-tag 配色
-│  ├─ useEventQuery.ts    列表筛选 + 分页 + 加载/删除/导出编排
+│  ├─ useEventQuery.ts    事件列表筛选 + 分页 + 加载/删除/导出编排
+│  ├─ useTodoQuery.ts     预警待办筛选 + 分页 + 勾选 + reloadCurrent/reloadAfterBatch
+│  ├─ useHandleRecords.ts 处理记录筛选 + 分页（事件 ID 文本校验）
 │  └─ __tests__/
 ├─ constants/
 │  ├─ error-code.ts       SUCCESS_CODE、ERROR_MESSAGES、TOKEN_KEY、LOCAL_ERROR_CODE、枚举 code 常量
 │  └─ dict.ts             FALLBACK_ENUMS（后端不可达时的静态兜底字典）
 ├─ layouts/BasicLayout.vue    侧栏 + 顶栏 + 面包屑 + 用户下拉
 ├─ models/
-│  ├─ eventEditModel.ts   15 个可修正字段 + toEditForm/diffEditForm/visibleGroups/asNumber
-│  ├─ statOptions.ts      三张图的 ECharts option 构造
+│  ├─ eventEditModel.ts       15 个可修正字段 + toEditForm/diffEditForm/visibleGroups/asNumber
+│  ├─ statOptions.ts          三张图的 ECharts option 构造
+│  ├─ handleStatusMachine.ts  状态机矩阵前端副本（canTransition/allowedTargets/allowedTargetsForAny）
 │  └─ __tests__/
 ├─ router/index.ts        路由表 + 登录守卫 + 页面标题
 ├─ stores/
@@ -123,7 +128,8 @@ src/
 ├─ views/
 │  ├─ PlaceholderView.vue 后续模块占位页
 │  ├─ login/index.vue
-│  └─ event/{list,statistics}.vue
+│  ├─ event/{list,statistics}.vue
+│  └─ handle/{todo,records}.vue
 ├─ App.vue · main.ts · env.d.ts
 ```
 
@@ -141,7 +147,9 @@ views → components / composables → stores → api → utils → types / cons
 
 ---
 
-## 5. 本期已实现
+## 5. 已实现
+
+### 一阶段（分支 `feat/admin-web`，已合入 main）
 
 **登录页** `/login`
 - form 编码提交 `POST /auth/oauth/token`（后端用 `@RequestParam` 接收，发 JSON 会 400）
@@ -160,13 +168,44 @@ views → components / composables → stores → api → utils → types / cons
 - 导出 xlsx / csv，带当前筛选条件、不带分页参数；超 5 万条时后端返 JSON 错误体，前端识别后提示而非下载一个假 Excel
 - 表头**不提供排序**（后端固定 `snap_time DESC`，前端排序是假的）
 
-**数据看板** `/event/statistics`
+**数据看板** `/event/statistics`（一阶段部分）
 - 时间区间（起补 `00:00:00`、止补 `23:59:59`）+ 设备编号筛选
-- 四张统计卡：事件总量、车辆、聚集、人脸，附占比（总量为 0 时显示 `—` 而非 `NaN%`）
+- 四张事件统计卡：事件总量、车辆、聚集、人脸，附占比（总量为 0 时显示 `—` 而非 `NaN%`）
 - 三张图：大类占比环形饼图、子类分布横向柱图（最大值在顶部）、每日趋势折线（平滑 + 面积 + dataZoom）
 - ECharts **按需引入**（`echarts/core` + 具体图表/组件），随看板路由懒加载
 
-**支撑设施**
+### 二阶段 A 组（分支 `feat/handle-phase2a`）
+
+**预警待办** `/handle/todo`
+- 4 项筛选：优先级、事件大类、设备编号、抓拍时间区间（**无 handleStatus** —— 待办接口语义固定 `{0,1}`）
+- 12 列表格（包含命中规则名）；同一阶段跨页保留勾选
+- 行内操作矩阵驱动：未处理(0) → [开始处理, 误报忽略]；处理中(1) → [标记已解决, 误报忽略]；终态(2/3) → 只剩「详情」
+- 工具栏「批量处理」（勾选空时禁用），弹窗内目标态按**并集**可选 + 实时预检提示「选中 N 条，其中 M 条可流转」（仅提示不拦截，后端仍是权威）
+- 流转后回查策略：单条保页码（末页删空自动收敛）、批量清勾选 + 回第 1 页
+- 行点击开详情抽屉（勾选列除外），复用一阶段 `EventDetailDrawer`
+
+**状态流转弹窗** `HandleProcessDialog`
+- 单条/批量通用（`events.length` 推导模式，无需 `mode` prop）
+- 目标态 radio 三项（处理中/已处理/误报忽略，中文名走字典），矩阵驱动禁用
+- remark textarea（maxlength 500，对齐 `alert_handle_record.handle_remark` 列宽），空串提交时不发键
+- 单条成功 → `ElMessage.success('处理成功')` + emit `processed` + 关窗；批量成功 → 弹窗切**结果视图**（「成功 X 条，跳过 Y 条」 + `#id 原因` 明细），用户点「关闭」时才 emit `processed`（避免刷新后看不到明细）
+- 关闭路径五重兵底：footer「关闭」/右上角 X / ESC / 「取消」/ 宿主外部关窗，均能 emit `processed`；`batchDone` 幂等闸避免重发
+- 同 tick 连点闸（`submitting` ref 同步置真），提交中 X/ESC/取消 三重禁用避免 in-flight 关窗丢结果
+
+**处理记录** `/handle/records`
+- 2 项筛选：事件 ID（文本框 + `/^\d+$/` 严格校验，非法输入不发键 —— 绕开 `el-input-number` v-model 类型坑）+ 处理时间区间
+- 6 列表格：记录 ID / 事件 ID（link 点击开详情抽屉）/ 流转（`fromStatus tag → toStatus tag`，`fromStatus=null` 显 `—`）/ 处理人 / 处理备注 / 处理时间
+- 表头**不设 sortable**（后端固定 `handle_time DESC, id DESC`）
+- 事件已被逻辑删时后端返 `1001`，由拦截器统一提示（不特殊处理）
+
+**看板处理效率 5 卡**（并入 `/event/statistics`）
+- 现有筛选表单（时间范围 + 设备编号）**同时驱动**事件统计与处理效率统计，`Promise.allSettled` 并行 + **独立容错**（任一失败仅该区块置空态）
+- 5 卡：待处理数 / 处理中数 / 今日已解决 / 误报率 / 平均处理时长（分钟）
+- 「今日已解决」卡加脚注「按自然日统计，不受筛选限制」（后端语义固有，避免误读为区间值）
+- 误报率展示为百分比（`percent(falseRate)`），平均处理时长保留一位小数（后端口径）
+- flex 等分布局（`el-row` 24 栅格除不尽 5）+ 窄屏自动换行
+
+### 支撑设施（一阶段建立、二阶段沿用）
 - 统一响应拆包：`code === 0` 返回 `data`，非 0 弹后端 `msg` 并抛 `BizError`
 - 401 统一出口：清凭据 + 硬跳登录（整页重载顺带清空 Pinia 内存态与字典缓存）
 - 字典一次性缓存 + in-flight 并发去重；后端不可达时回落静态字典，不阻塞页面
@@ -177,14 +216,14 @@ views → components / composables → stores → api → utils → types / cons
 
 ## 6. 未完成模块（后续迭代）
 
-路由已注册但 `meta.hidden = true`，实现后去掉 `hidden` 即上线：
+二阶段 A 组已完成前 4 项（预警处置闭环）；尚未实现的模块路由已注册但 `meta.hidden = true`，实现后去掉 `hidden` 即上线：
 
 | # | 模块 | 路由 | 依赖端点 |
 |---|---|---|---|
-| 1 | 预警待办 | `/handle/todo` | `GET /alert-handles/todo` |
-| 2 | 状态流转 | 待办页内弹窗 | `POST /alert-handles/process`、`/batch-process` |
-| 3 | 处理记录 | `/handle/records` | `GET /alert-handles/records` |
-| 4 | 处理效率统计 | 并入看板 | `GET /alert-handles/statistics` |
+| ~~1~~ | ~~预警待办~~ | ~~/handle/todo~~ | ~~`GET /alert-handles/todo`~~ **✓ 二阶段 A 组已交付** |
+| ~~2~~ | ~~状态流转~~ | ~~待办页内弹窗~~ | ~~`POST /alert-handles/process`、`/batch-process`~~ **✓ 二阶段 A 组已交付** |
+| ~~3~~ | ~~处理记录~~ | ~~/handle/records~~ | ~~`GET /alert-handles/records`~~ **✓ 二阶段 A 组已交付** |
+| ~~4~~ | ~~处理效率统计~~ | ~~并入看板~~ | ~~`GET /alert-handles/statistics`~~ **✓ 二阶段 A 组已交付** |
 | 5 | 布控规则管理 | `/rule/list` | `/alert-rules` 全 7 端点 |
 | 6 | 规则试跑 | 规则页内抽屉 | `POST /alert-rules/match-test` |
 | 7 | 站内通知 | 顶栏铃铛 + `/notification` | `/notifications` 全 5 端点 |
@@ -192,7 +231,7 @@ views → components / composables → stores → api → utils → types / cons
 | 9 | 船舶舷号 | 事件子类 | `ship_plate`（Python 端未推送） |
 | 10 | 导出异步化 | — | 需后端提供异步任务端点 |
 
-每项「本期未做的原因」见 [docs/IMPLEMENTATION_LOG.md](docs/IMPLEMENTATION_LOG.md) 第 ③ 节。
+每项「本期未做的原因」见 [docs/IMPLEMENTATION_LOG.md](docs/IMPLEMENTATION_LOG.md) 第 ③ 节；二阶段 A 组交付详情见第 ⑤ 节。
 
 ---
 
@@ -247,6 +286,8 @@ mc anonymous set download myminio/detect
 ## 8. 更多文档
 
 - 实施过程、逐项验证实测记录、已知问题与技术债：[docs/IMPLEMENTATION_LOG.md](docs/IMPLEMENTATION_LOG.md)
-- 设计规格：`docs/superpowers/specs/2026-09-12-detect-admin-web-design.md`
-- 实施计划：`docs/superpowers/plans/2026-09-12-detect-admin-web.md`
+- 一阶段设计规格：`docs/superpowers/specs/2026-09-12-detect-admin-web-design.md`
+- 一阶段实施计划：`docs/superpowers/plans/2026-09-12-detect-admin-web.md`
+- 二阶段 A 组设计规格：`docs/superpowers/specs/2026-09-15-detect-phase2a-design.md`
+- 二阶段 A 组实施计划：`docs/superpowers/plans/2026-09-15-detect-phase2a.md`
 - 后端接口契约：`yolo26/docs/superpowers/specs/2026-09-10-event-management-api-design.md`

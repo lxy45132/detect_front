@@ -1,7 +1,9 @@
 # Detect 事件管理后台前端 — 实施日志
 
-> 分支：`feat/admin-web`（自 `main@0cc63ea` 切出）｜计划：`docs/superpowers/plans/2026-09-12-detect-admin-web.md`｜规格：`docs/superpowers/specs/2026-09-12-detect-admin-web-design.md`
-> 后端契约：`yolo26/docs/superpowers/specs/2026-09-10-event-management-api-design.md`（29 端点，本期用 9 个）
+> 分支：`feat/admin-web`（一阶段，已合入 `main`）+ `feat/handle-phase2a`（二阶段 A 组，自 `main@6828abc` 切出）
+> 计划：`docs/superpowers/plans/2026-09-12-detect-admin-web.md`（一阶段）、`docs/superpowers/plans/2026-09-15-detect-phase2a.md`（二阶段 A 组）
+> 规格：`docs/superpowers/specs/2026-09-12-detect-admin-web-design.md`、`docs/superpowers/specs/2026-09-15-detect-phase2a-design.md`
+> 后端契约：`yolo26/docs/superpowers/specs/2026-09-10-event-management-api-design.md`（29 端点，一阶段用 9 个、二阶段 A 组再用 5 个）
 
 ---
 
@@ -225,3 +227,80 @@ UPDATE event_records SET vehicle_color = NULL, plate_num = '浙C6B5P8' WHERE id 
 
 19. `el-table` 的 `reserve-selection` 在批量删除后，EP 内部保留的 `row-key` 集合是否会自动剔除已删除行、`@selection-change` 会不会把陈旧 row 回吐（`removeMany` 只清了本地 `selection` ref，未调 `tableRef.clearSelection()`）
 20. 详情抽屉内嵌的 `EventEditDialog` 与列表页外层那个同时挂载时，两层 Teleport 到 body 的弹层 z-index 与焦点回收表现（代码逻辑无冲突，未做真机确认）
+
+---
+
+## ⑤ 二阶段 A 组（预警处置闭环）
+
+**起止**：2026-09-15 起、2026-09-15 止（代码与单测全部完成；前后端联调与浏览器实测按约定由**使用方**执行）
+
+**分支**：`feat/handle-phase2a`（自 `main@6828abc` 切出）
+
+**范围**：4 个模块（预警待办 / 状态流转弹窗 / 处理记录 / 处理效率统计），后端 5 个新端点（`/alert-handles/{todo, process, batch-process, records, statistics}`）
+
+### Task 完成状态
+
+| Task | 内容 | 状态 | 提交 | 实测 |
+|---|---|---|---|---|
+| 1 | 类型补全 + 状态机矩阵纯函数（StatQuery 收归 types） | 完成 | `057d6d7` | 31 tests（矩阵 16 格 + 边界 4 + allowedTargets 5 + allowedTargetsForAny 6） |
+| 2 | API 层 `api/handle.ts`（5 端点薄透传） | 完成 | `33f3af8` | 6 tests |
+| 3 | `useTodoQuery` composable | 完成 | `b096899` | 16 tests（fix round 后 18） |
+| 4 | `HandleProcessDialog` 弹窗 | 完成 | `8e35736` | 23 tests（fix round 后 27） |
+| — | Task 1-4 层评审修复 | 完成 | `155c8a5` | 284 tests 全绿 |
+| 5 | 预警待办页 `/handle/todo` + 路由替换 | 完成 | `1bdb20e` | build EXIT=0（视图页不写单测，同一阶段约定） |
+| 6 | 处理记录页 `/handle/records` + `useHandleRecords` + 路由替换 | 完成 | `808c209` | 18 tests + build EXIT=0 |
+| 7 | 看板并入处理效率 5 卡（双统计并行独立容错） | 完成 | `5b87d83` | build EXIT=0 |
+| 8 | 回归 + 文档收尾 | 完成 | 本次提交 | 302 tests / coverage 55.71% / build EXIT=0 |
+
+### 测试与构建实测值
+
+- **单测**：`npm run test` → **24 files / 302 tests 全绿**（一阶段基线 19/202 + 二阶段 A 组 5 files / 100 tests）
+- **覆盖率**（`npm run test:coverage`，v8）：All files **55.71% stmts / 90.95% branch / 84.96% funcs**；分层看：
+  - `models/handleStatusMachine.ts` **100% / 100% / 100% / 100%**
+  - `composables/useTodoQuery.ts` **100% / 90.47% / 100% / 100%**（未覆盖分支为 `?? []` 兜底）
+  - `composables/useHandleRecords.ts` **100% / 88.88% / 100% / 100%**（同上）
+  - `api/handle.ts` 5 端点均有专用用例锁定路径/方法/参数透传
+  - `views/*` **0%**（计划明写「视图页不写单测」，视图行为改由使用方浏览器联调覆盖）
+- **类型检查**：`npm run type-check`（`vue-tsc --noEmit`）→ **EXIT=0**
+- **生产构建**：`npm run build` → **EXIT=0**，14.49s，无 `> 500 kB` 警告（`chunkSizeWarningLimit: 1500`）
+- **chunk 体积变化**（对比一阶段末 `d771ff0`）：
+  - `statistics` chunk 560.75 → **562.09 kB**（+1.34 kB，5 卡与 `Promise.allSettled` 双统计）
+  - `handle` chunk（0.29 → **0.34 kB**）+5 端点薄封装
+  - 新增 `todo` chunk **11.97 kB**（gzip 4.69）、`records` chunk **4.56 kB**（gzip 2.16）—— 路由级懒加载
+  - JS 合计（不含 element/vue 两个大 chunk）**约 +18 kB**
+
+### 代码评审记录
+
+| 范围 | 结论 | 修复 |
+|---|---|---|
+| Task 1-4 逻辑层 | 规格 ✅ / 质量需修改，**0 Critical / 1 Important / 4 Minor** | `155c8a5`；再评审 **5 项全部 ADDRESSED**、fix diff 无新增 Critical/Important/Minor，仅 2 项 deferred minor |
+| Task 5-8 视图层 + 收尾 | 待层评审 | — |
+| 整分支 | 待末尾评审 | — |
+
+### 评审抓到并已修的真实缺陷
+
+1. **批量成功后经 X/ESC 关结果视图 → `processed` 永不发出** —— EP dialog 默认 `showClose=true` 与 `closeOnPressEscape=true`，用户可绕开 footer「关闭」按钮关窗；原实现只在 footer 按钮 emit `processed`，X/ESC 路径丢通知 → 后端已流转但前端列表不刷新，用户再点旧行就撞 `3001`。修法：新增 `batchDone` ref + `notifyIfBatchDone()` 幂等闸，覆盖 closeResult / X / ESC / 取消 / 外部关窗 / in-flight 关窗**五路径**；模板追加 `:show-close="!submitting"` + `:close-on-press-escape="!submitting"` + 取消按钮 `:disabled="submitting"` **三重防护**
+2. **`useTodoQuery.reloadCurrent` 缺末页收敛** —— 单条流转到终态（2/3）会让该行从待办消失，若本页只剩这 1 行则回查后停在越界空页。修法：加载后若 `rows.length === 0 && page > 1`，clamp 到 `Math.max(1, Math.ceil(total/size))` 并重拉，与一阶段 `removeOne` 语义对齐
+3. **`HandleProcessDialog` 的 watch 监听面过宽** —— 原 `watch([modelValue, events, presetTarget], ..., { deep: true })` 在宿主写 `:events="[row]"` 或传不稳定 computed 时，父级任何一次重渲染都会让 events 换引用 → 弹窗还开着但用户已选目标态与已输入 remark 被清空。修法：收窄为仅监听 `modelValue` 跳变（false→true 重置、true→false 兵底），另加 `watch(allowed)` 只在 events 变化时失效非法 target、不动 remark
+4. **测试盲区**：结果视图 X/ESC 关闭路径、`events: []` 空态、submitting 期间 X 隐藏、末页收敛、首页拉空不重拉 —— 全部补上（+6 用例）
+5. **结果视图断言用裸数字**（`toContain('2') + toContain('1')`）无法捕捉「成功数/跳过数写反」—— 改用归一化空白后的完整文案 `toContain('成功2条，跳过1条')`
+
+### 逐项验证实测记录（规格 §6 五条）
+
+> 记录规则：**通过** = 有实际观察到的证据；**待使用方测试** = 本次未验，说明原因。本期联调按约定全部由使用方执行，故五项均标「待使用方测试」，并列出前端已实现的可验证部分。
+
+| # | 验证项（规格 §6） | 结果 | 备注 |
+|---|---|---|---|
+| 1 | 单条流转后待办列表变化（→处理中 留在列表；→已处理/误报 消失且 total 收缩） | **待使用方测试** | 需真实后端 + DB；`reloadCurrent` 末页收敛分支已由单测覆盖（`useTodoQuery.test.ts` 新增 2 例） |
+| 2 | 批量混合状态的部分成功提示与 skipped 明细 | **待使用方测试** | 需后端产生 skipped；组件测试已锁定「成功 X 条，跳过 Y 条」完整文案与 `#id 原因` 明细渲染 |
+| 3 | 非法流转（如直接对已处理事件发请求）弹后端 `3001` msg | **待使用方测试** | 拦截器统一提示已由一阶段验证；矩阵驱动的按钮禁用已在待办页消除主要非法路径（终态行只剩「详情」按钮） |
+| 4 | 看板筛选同时驱动两组统计、效率 5 卡与 DB 口径一致 | **待使用方测试** | 双请求并行 + 独立容错由 `Promise.allSettled` 保证；`percent(falseRate)`、`avgHandleMinutes.toFixed(1)` 已按后端口径实现；「今日已解决」卡加脚注「按自然日统计，不受筛选限制」 |
+| 5 | 误报流转后处理记录页出现对应留痕（原状态→新状态正确） | **待使用方测试** | 需真实后端；`fromStatus tag → toStatus tag` 与 `fromStatus=null 显破折号` 分支已在 records.vue 实现 |
+
+### 本期新增已知问题与技术债（接一阶段编号）
+
+21. **`useTodoQuery`/`useHandleRecords` 无并发去重（AbortController）** —— 与一阶段 `useEventQuery.load` 同构（全仓无 AbortController），非本期引入；快速连点查询按钮时前一个请求的响应仍会覆盖后一个，但拦截器的 `ERR_CANCELED` 静默分支需配合 signal 才能触发。属既定架构取舍，未来统一处理
+22. **`HandleProcessDialog` 的 `watch(allowed)` 在宿主传字面量引用时每次父级重渲染都 fire** —— callback 内有 `!list.includes(target.value)` 短路，无副作用，仅极小 GC 压力；宿主接线（todo.vue）已用 `processEvents` ref 传稳定引用，实际不触发
+23. **`reloadCurrent` 末页收敛二次 load 仍空时无进一步兜底** —— 与 `removeOne` 语义一致，属既定设计取舍；生产环境末页删空的罕见场景才触发
+24. **`HandleProcessDialog` 契约与规格 §3.2 的偏离**（Ruling）—— 不设 `mode: 'single'|'batch'` prop，由 `events.length` 推导。规格允许此简化；调用方少一个 prop，语义等价。日志与计划均注明
+25. **清偿一阶段延后 Minor #14**：`StatQuery` 已从 `api/event.ts` 迁至 `types/api.ts`（跨事件/处理两域共用）；`api/event.ts` 保留 `export type { StatQuery }` 兼容 re-export。实测：全仓无任何文件从 `@/api/event` 导入 StatQuery（一阶段内部自用），兼容 re-export 为零消费者的无害冗余，为未来消费点保留
