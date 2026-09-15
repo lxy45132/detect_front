@@ -51,14 +51,14 @@ export const routes: RouteRecordRaw[] = [
       {
         path: 'handle/todo',
         name: 'HandleTodo',
-        component: () => import('@/views/PlaceholderView.vue'),
-        meta: { title: '预警待办', icon: 'Bell', hidden: true }
+        component: () => import('@/views/handle/todo.vue'),
+        meta: { title: '预警待办', icon: 'Bell' }
       },
       {
         path: 'handle/records',
         name: 'HandleRecords',
-        component: () => import('@/views/PlaceholderView.vue'),
-        meta: { title: '处理记录', icon: 'Tickets', hidden: true }
+        component: () => import('@/views/handle/records.vue'),
+        meta: { title: '处理记录', icon: 'Tickets' }
       },
       {
         path: 'rule/list',
