@@ -263,7 +263,7 @@ UPDATE event_records SET vehicle_color = NULL, plate_num = '浙C6B5P8' WHERE id 
   - `views/*` **0%**（计划明写「视图页不写单测」，视图行为改由使用方浏览器联调覆盖）
 - **类型检查**：`npm run type-check`（`vue-tsc --noEmit`）→ **EXIT=0**
 - **生产构建**：`npm run build` → **EXIT=0**，14.49s，无 `> 500 kB` 警告（`chunkSizeWarningLimit: 1500`）
-- **chunk 体积变化**（对比一阶段末 `d771ff0`）：
+- **chunk 体积变化**（对比基线 `d771ff0` —— 一阶段最后一次改动 chunk 策略的提交（移除把 echarts 拉进 chunk 的 `manualChunks`），位于分支基点 `6828abc` 前 3 提交）：
   - `statistics` chunk 560.75 → **562.09 kB**（+1.34 kB，5 卡与 `Promise.allSettled` 双统计）
   - `handle` chunk（0.29 → **0.34 kB**）+5 端点薄封装
   - 新增 `todo` chunk **11.97 kB**（gzip 4.69）、`records` chunk **4.56 kB**（gzip 2.16）—— 路由级懒加载
@@ -274,8 +274,8 @@ UPDATE event_records SET vehicle_color = NULL, plate_num = '浙C6B5P8' WHERE id 
 | 范围 | 结论 | 修复 |
 |---|---|---|
 | Task 1-4 逻辑层 | 规格 ✅ / 质量需修改，**0 Critical / 1 Important / 4 Minor** | `155c8a5`；再评审 **5 项全部 ADDRESSED**、fix diff 无新增 Critical/Important/Minor，仅 2 项 deferred minor |
-| Task 5-8 视图层 + 收尾 | 待层评审 | — |
-| 整分支 | 待末尾评审 | — |
+| Task 5-8 视图层 + 收尾 | 规格 ✅ / 质量 Approved，**0 Critical / 0 Important / 0 Minor** | —；3 项 ⚠️ 无法从 diff 验证（reserve-selection 内部缓存 / watch(allowed) 实际 fire 频率 / 极窄屏 flex 溢出）均已登记于下方技术债 26-27，属使用方联调验证范围 |
+| 整分支 | **规格 ✅ / ✅ 可以合并**，**0 Critical / 0 Important / 4 Minor**（均非阻塞） | 4 项 Minor 均为文档可追溯性与一项运行期联调核实项，已在本次提交随手处理（补登 3 项 ⚠️ / 更新评审记录表 / 修正 chunk 基线标注）；Minor-1（reserve-selection 潜在残留）列为使用方联调首核项 |
 
 ### 评审抓到并已修的真实缺陷
 
@@ -304,3 +304,5 @@ UPDATE event_records SET vehicle_color = NULL, plate_num = '浙C6B5P8' WHERE id 
 23. **`reloadCurrent` 末页收敛二次 load 仍空时无进一步兜底** —— 与 `removeOne` 语义一致，属既定设计取舍；生产环境末页删空的罕见场景才触发
 24. **`HandleProcessDialog` 契约与规格 §3.2 的偏离**（Ruling）—— 不设 `mode: 'single'|'batch'` prop，由 `events.length` 推导。规格允许此简化；调用方少一个 prop，语义等价。日志与计划均注明
 25. **清偿一阶段延后 Minor #14**：`StatQuery` 已从 `api/event.ts` 迁至 `types/api.ts`（跨事件/处理两域共用）；`api/event.ts` 保留 `export type { StatQuery }` 兼容 re-export。实测：全仓无任何文件从 `@/api/event` 导入 StatQuery（一阶段内部自用），兼容 re-export 为零消费者的无害冗余，为未来消费点保留
+26. **待办批量流转沿用 `reserve-selection`，`reloadAfterBatch` 未调 `clearSelection()`**（承 ④ 第 19 条 `removeMany` 同源 pattern）—— 批量流转到**终态**（误报/已解决）时行消失、勾选自然清空，符合预期；但批量「开始处理」(0→1) 的行**仍留在待办**，EP 会按 reserve 的 `row-key` 把它们重新判为选中并回吐 `@selection-change` → `selection.value` 被重新填充，「清空勾选」在这一路径运行期可能不成立。属**运行期才能确证**的行为，后端仍为权威，影响面为 UX（残留勾选/工具栏计数），非数据/安全问题。**使用方联调首核项**：重点验「批量→开始处理」后勾选是否残留；若确证残留，备选修法为给 `el-table` 加 `ref`，在批量成功回调里 `tableRef.value?.clearSelection()` 后再 `reloadAfterBatch()`
+27. **看板 5 卡极窄屏（<320px）行为**（⚠️ 无法从静态代码判定）—— 代码已用 `flex-wrap: wrap + min-width: 160px` 兜底（[statistics.vue](../src/views/event/statistics.vue) `.handle-stat-row` / `.handle-stat-card`），理论上安全，风险低；使用方可以 DevTools 窄屏模式实测确认无溢出
