@@ -103,6 +103,23 @@ const aiReview = computed<AiReview | null>(() => {
   return null
 })
 
+/**
+ * 后端以 ISO-8601 输出复核时间（如 2026-09-16T10:20:30+08:00），
+ * 与项目其他时间显示风格（yyyy-MM-dd HH:mm:ss）对齐：去 T / 去时区后缀。
+ */
+function formatReviewTime(iso: string | null | undefined): string {
+  if (!iso) return '—'
+  // 取日期 + 时间部分，丢弃时区；非标准格式则原样返回
+  const m = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2})/.exec(iso)
+  return m ? `${m[1]} ${m[2]}` : iso
+}
+
+/** 置信度百分比展示：后端可能传 undefined/null/NaN，统一兜底 0。 */
+function formatConfidence(v: number | null | undefined): string {
+  const n = typeof v === 'number' && !Number.isNaN(v) ? v : 0
+  return (n * 100).toFixed(0)
+}
+
 async function fetchDetail(id: number): Promise<void> {
   loading.value = true
   try {
@@ -245,17 +262,18 @@ defineExpose({ reload })
           <el-descriptions-item label="修正前">
             <span :class="{ 'ai-original': aiReview.overridden }">
               {{ aiReview.original.value || '无' }}
-              <span class="sub-text">(置信度 {{ (aiReview.original.confidence * 100).toFixed(0) }}%)</span>
+              <span class="sub-text">(置信度 {{ formatConfidence(aiReview.original.confidence) }}%)</span>
             </span>
           </el-descriptions-item>
           <el-descriptions-item label="修正后">
             <span v-if="aiReview.corrected.value" :class="{ 'ai-corrected': aiReview.overridden }">
               {{ aiReview.corrected.value }}
-              <span class="sub-text">(置信度 {{ (aiReview.corrected.confidence * 100).toFixed(0) }}%)</span>
+              <span v-if="aiReview.corrected.plateColor" class="sub-text">({{ aiReview.corrected.plateColor }})</span>
+              <span class="sub-text">(置信度 {{ formatConfidence(aiReview.corrected.confidence) }}%)</span>
             </span>
             <span v-else class="muted">未修正</span>
           </el-descriptions-item>
-          <el-descriptions-item label="复核时间">{{ aiReview.reviewedAt }}</el-descriptions-item>
+          <el-descriptions-item label="复核时间">{{ formatReviewTime(aiReview.reviewedAt) }}</el-descriptions-item>
           <el-descriptions-item label="状态">
             <el-tag :type="aiReview.status === 'ok' ? 'success' : 'info'" size="small">
               {{ aiReview.status }}

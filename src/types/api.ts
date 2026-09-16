@@ -367,7 +367,11 @@ export interface ReadAllResult {
   read: number
 }
 
-/** AI 复核结果（sourceData.aiReview） */
+/** AI 复核结果（sourceData.aiReview）
+ *
+ * 后端降级路径（status=error/timeout/dropped/parse_error）会传 corrected={} 空对象，
+ * 因此 corrected 字段均为可选。使用前需先判空（参考 EventDetailDrawer 中的 v-if）。
+ */
 export interface AiReview {
   reviewed: boolean
   overridden: boolean
@@ -375,7 +379,7 @@ export interface AiReview {
   model: string
   reviewedAt: string
   original: { value: string; confidence: number }
-  corrected: { value: string; confidence: number; plateColor?: string }
+  corrected: Partial<{ value: string; confidence: number; plateColor: string }>
   reason: string
   status: string
 }
