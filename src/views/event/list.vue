@@ -283,7 +283,10 @@ async function onExport(format: 'xlsx' | 'csv'): Promise<void> {
 
         <el-table-column label="事件类型" min-width="140">
           <template #default="{ row }">
-            <div>{{ textOr(row.eventTypeName, dict.labelOf('eventType', row.eventType)) }}</div>
+            <div>
+              {{ textOr(row.eventTypeName, dict.labelOf('eventType', row.eventType)) }}
+              <el-tag v-if="row.aiCorrected" type="warning" size="small" style="margin-left: 4px">AI 已修正</el-tag>
+            </div>
             <div class="sub-text">{{ dict.labelOf('task', row.task) }}</div>
           </template>
         </el-table-column>

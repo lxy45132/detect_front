@@ -30,7 +30,8 @@ function row(id: number, handleStatus: number): TodoItem {
     handleStatus,
     priority: 0,
     hitRuleId: null,
-    hitRuleName: null
+    hitRuleName: null,
+    aiCorrected: false
   }
 }
 

@@ -8,7 +8,7 @@ import { BizError } from '@/api/interceptors'
 import { BIZ_CODE } from '@/constants/error-code'
 import { useEnum } from '@/composables/useEnum'
 import { useDictStore } from '@/stores/dict'
-import type { EventRecordDetail } from '@/types/api'
+import type { AiReview, EventRecordDetail } from '@/types/api'
 import { dash, textOr } from '@/utils/format'
 
 /**
@@ -89,6 +89,18 @@ const businessFields = computed<{ label: string; value: string }[]>(() => {
   }
 
   return fields
+})
+
+/** AI 复核结果：从 sourceData.aiReview 提取，仅 reviewed=true 时展示 */
+const aiReview = computed<AiReview | null>(() => {
+  const raw = detail.value?.sourceData
+  if (raw && typeof raw === 'object') {
+    const review = (raw as Record<string, unknown>).aiReview
+    if (review && typeof review === 'object' && (review as AiReview).reviewed) {
+      return review as AiReview
+    }
+  }
+  return null
 })
 
 async function fetchDetail(id: number): Promise<void> {
@@ -216,6 +228,44 @@ defineExpose({ reload })
           </el-descriptions-item>
         </el-descriptions>
 
+        <!-- 4.5 AI 复核对比区 -->
+        <el-descriptions
+          v-if="aiReview"
+          title="AI 复核"
+          :column="2"
+          border
+          size="small"
+          class="detail__section"
+        >
+          <el-descriptions-item label="复核字段">
+            {{ aiReview.field === 'vehicleType' ? '车辆类型' : '车牌号' }}
+            <el-tag v-if="aiReview.overridden" type="warning" size="small" style="margin-left: 6px">已修正</el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="模型">{{ aiReview.model }}</el-descriptions-item>
+          <el-descriptions-item label="修正前">
+            <span :class="{ 'ai-original': aiReview.overridden }">
+              {{ aiReview.original.value || '无' }}
+              <span class="sub-text">(置信度 {{ (aiReview.original.confidence * 100).toFixed(0) }}%)</span>
+            </span>
+          </el-descriptions-item>
+          <el-descriptions-item label="修正后">
+            <span v-if="aiReview.corrected.value" :class="{ 'ai-corrected': aiReview.overridden }">
+              {{ aiReview.corrected.value }}
+              <span class="sub-text">(置信度 {{ (aiReview.corrected.confidence * 100).toFixed(0) }}%)</span>
+            </span>
+            <span v-else class="muted">未修正</span>
+          </el-descriptions-item>
+          <el-descriptions-item label="复核时间">{{ aiReview.reviewedAt }}</el-descriptions-item>
+          <el-descriptions-item label="状态">
+            <el-tag :type="aiReview.status === 'ok' ? 'success' : 'info'" size="small">
+              {{ aiReview.status }}
+            </el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item v-if="aiReview.reason" label="理由" :span="2">
+            {{ aiReview.reason }}
+          </el-descriptions-item>
+        </el-descriptions>
+
         <!-- 5. 检测元数据 -->
         <div class="detail__section">
           <div class="detail__section-title">检测元数据</div>
@@ -283,6 +333,16 @@ defineExpose({ reload })
 .detail__section-title {
   margin-bottom: 8px;
   font-size: 14px;
+  font-weight: 600;
+}
+
+.ai-original {
+  text-decoration: line-through;
+  color: #909399;
+}
+
+.ai-corrected {
+  color: #e6a23c;
   font-weight: 600;
 }
 </style>

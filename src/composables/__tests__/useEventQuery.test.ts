@@ -36,6 +36,7 @@ function row(id: number, over: Partial<EventRecordItem> = {}): EventRecordItem {
     handleStatus: 0,
     priority: 0,
     hitRuleId: null,
+    aiCorrected: false,
     ...over
   }
 }

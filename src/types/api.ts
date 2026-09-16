@@ -131,6 +131,8 @@ export interface EventRecordItem {
   handleStatus: number
   priority: number
   hitRuleId: number | null
+  /** AI 复核是否修正了原值 */
+  aiCorrected: boolean
 }
 
 /** 命中规则摘要（HitRuleVO） */
@@ -363,4 +365,17 @@ export interface UnreadCountResult {
 /** 全部已读结果（ReadAllVO） */
 export interface ReadAllResult {
   read: number
+}
+
+/** AI 复核结果（sourceData.aiReview） */
+export interface AiReview {
+  reviewed: boolean
+  overridden: boolean
+  field: string
+  model: string
+  reviewedAt: string
+  original: { value: string; confidence: number }
+  corrected: { value: string; confidence: number; plateColor?: string }
+  reason: string
+  status: string
 }

@@ -34,6 +34,7 @@ function row(id: number, over: Partial<TodoItem> = {}): TodoItem {
     priority: 0,
     hitRuleId: 1,
     hitRuleName: '车牌黑名单',
+    aiCorrected: false,
     ...over
   }
 }
